@@ -114,17 +114,31 @@ class Settings(BaseSettings):
 
 ## 네트워크 보안
 
+### 원격 접근 정책
+
+본 프로젝트의 모든 외부 접근(SSH, dashboard 등)은 **Tailscale 메시 사설망**을 통해서만 허용한다. 공인 인터넷에 직접 포트를 열지 않는다.
+
+| 서비스 | 노출 경로 | 인증 |
+|---|---|---|
+| SSH (포트 22) | LAN(192.168.0.x) + tailnet(100.x) | SSH 키 |
+| Dashboard (Streamlit) | `127.0.0.1:8501` → `tailscale serve`가 HTTPS로 tailnet에만 프록시 | tailnet 디바이스 멤버십 |
+| 기타 로컬 서비스 | 기본 `127.0.0.1` 바인딩, 필요 시 `tailscale serve`로 노출 | 동일 |
+
+- **공인망 직접 노출 금지**: 라우터에 포트 포워딩 설정하지 않는다. `tailscale funnel`(공인망 노출 기능)도 사용 안 함
+- Tailscale ACL: 본인 계정의 디바이스만. 사용자 추가 시 ACL 명시적 검토
+- Tailscale 계정 자체는 OAuth 제공자(Google/GitHub 등) 2FA로 보호
+
 ### 로컬 운영
 - 방화벽: 인바운드 포트 기본 차단
 - 대시보드는 `127.0.0.1`에만 바인딩 (외부 노출 금지)
+- Tailscale은 **App Store 또는 standalone(.pkg) GUI 버전** 사용 (`docs/11-operations.md` 참조)
+  - 두 GUI 버전 모두 sandbox에서 동작 — `tailscale up --ssh` 서버 기능 미지원
+  - 대신 macOS Remote Login(시스템 설정 → 일반 → 공유)을 켜고 표준 sshd가 tailnet 인터페이스에서 listen하도록 함
 
-### 서버 운영
-- SSH 키 인증, 비밀번호 로그인 비활성화
-- `fail2ban` 설정
-- UFW/iptables 기본 deny
-- 외부 노출이 필요한 경우 VPN 또는 Tailscale
-- HTTPS 필수 (자체 서명 인증서 또는 Let's Encrypt)
-- 대시보드는 **기본 비활성**, 필요 시 SSH 포트포워딩으로 접근
+### SSH 키 정책
+- macOS 비밀번호 인증보다 SSH 키 인증 권장
+- `~/.ssh/authorized_keys`에 등록된 키만 접속 허용 (필요 시 `/etc/ssh/sshd_config`에서 `PasswordAuthentication no`)
+- 키 분실·디바이스 도난 시 즉시 `authorized_keys`에서 해당 줄 삭제
 
 ## 의존성 보안
 

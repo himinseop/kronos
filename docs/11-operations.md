@@ -127,6 +127,46 @@ logs/
   - 전략별 성과
   - API 헬스 상태
 
+## 원격 접근 (Tailscale)
+
+본인 디바이스(iPad/노트북 등) 어디서든 안전하게 SSH·dashboard에 접근하기 위해 Tailscale 메시 사설망을 사용한다. **공인 인터넷에 포트를 열지 않는다.** 보안 정책 상세는 [12-security.md](./12-security.md) 참조.
+
+### 설치 (macOS 호스트)
+1. App Store에서 **Tailscale** 설치 (또는 https://tailscale.com/download/mac 에서 standalone .pkg)
+2. 메뉴바 아이콘 → Log in (Google/GitHub 등 OAuth)
+3. CLI 사용 시 `/usr/local/bin/tailscale`이 자동 생성됨 (standalone .pkg)
+   - App Store 버전은 래퍼 스크립트 필요:
+     `printf '#!/bin/sh\nexec /Applications/Tailscale.app/Contents/MacOS/Tailscale "$@"\n' | sudo tee /usr/local/bin/tailscale && sudo chmod +x /usr/local/bin/tailscale`
+
+### Tailnet 1회 설정 (admin 콘솔)
+- https://login.tailscale.com/admin/dns 에서 **MagicDNS** + **HTTPS Certificates** 활성화
+- 디바이스명 `<host>.<tailnet>.ts.net` 형태로 자동 발급되고 TLS 인증서까지 무료 자동 발급
+
+### SSH 활성화 (Mac 호스트)
+- macOS GUI 빌드(App Store/standalone .pkg)는 `tailscale up --ssh` 미지원 — 대신 macOS 표준 sshd 사용
+- 시스템 설정 → 일반 → 공유 → **원격 로그인** ON
+- `~/.ssh/authorized_keys`에 접속할 디바이스의 공개키 등록 (비밀번호 인증보다 권장)
+
+### Dashboard 노출
+```bash
+uv run kronos dashboard       # 127.0.0.1:8501 바인딩
+tailscale serve --bg 8501     # tailnet에 HTTPS로 프록시 (재부팅 후 자동 복원)
+```
+- 접속 URL: `https://<host>.<tailnet>.ts.net/`
+- 해제: `tailscale serve --https=443 off`
+- 현재 상태 확인: `tailscale serve status`
+
+### 클라이언트 (iPad/iPhone/Mac/Windows)
+- App Store/Play Store에서 Tailscale 설치 → 같은 계정 로그인
+- SSH 클라이언트: iPad는 **Termius**(무료), **Blink Shell**(유료) 추천
+- 접속: `ssh we@<host>.<tailnet>.ts.net` 또는 tailnet IP(`100.x.y.z`)
+- Dashboard: 브라우저로 `https://<host>.<tailnet>.ts.net/`
+
+### 장애 대응
+- Tailscale 데몬이 죽었을 때: 메뉴바 GUI 재시작 또는 `sudo launchctl kickstart -k system/com.tailscale.tailscaled`
+- DERP relay만 잡히고 direct connection 불가: 방화벽 NAT 통과 확인 (성능 저하만, 동작은 함)
+- 인증서 발급 실패: admin 콘솔 HTTPS Certs 활성 여부 재확인
+
 ## 장애 대응 플레이북
 
 ### 증상: 주문이 체결 안 됨

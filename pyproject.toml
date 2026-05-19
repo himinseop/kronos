@@ -38,6 +38,9 @@ target-version = "py311"
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/kronos/cli.py" = ["B008"]  # typer는 인자 기본값으로 typer.Option/Argument를 요구함
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

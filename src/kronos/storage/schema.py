@@ -36,6 +36,21 @@ CREATE INDEX IF NOT EXISTS idx_disclosures_ticker_dt ON disclosures(ticker, rcep
 CREATE INDEX IF NOT EXISTS idx_disclosures_collected ON disclosures(collected_at DESC);
 CREATE INDEX IF NOT EXISTS idx_disclosures_type      ON disclosures(pblntf_ty);
 
+CREATE TABLE IF NOT EXISTS tickers (
+    ticker        TEXT PRIMARY KEY,
+    corp_code     TEXT,
+    corp_name     TEXT NOT NULL,
+    market        TEXT,
+    synced_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tickers_name ON tickers(corp_name);
+
+CREATE TABLE IF NOT EXISTS ticker_aliases (
+    alias         TEXT PRIMARY KEY,
+    ticker        TEXT NOT NULL REFERENCES tickers(ticker)
+);
+CREATE INDEX IF NOT EXISTS idx_aliases_ticker ON ticker_aliases(ticker);
+
 CREATE TABLE IF NOT EXISTS collector_runs (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     source        TEXT    NOT NULL,

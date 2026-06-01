@@ -6,7 +6,9 @@ import altair as alt
 import streamlit as st
 
 from kronos.config import get_settings
+from kronos.dashboard import events as ev
 from kronos.dashboard import queries as q
+from kronos.dashboard import ticker_view as tv
 
 st.set_page_config(page_title="Kronos · 수집 모니터링", layout="wide")
 
@@ -22,8 +24,26 @@ conn = q.open_db(DB_PATH)
 st.title("Kronos · 수집 모니터링")
 st.caption(f"DB: `{DB_PATH}`")
 
-tab_overview, tab_health, tab_feed, tab_disc_types, tab_quality, tab_viewer = st.tabs(
-    ["개요", "소스 헬스", "최근 피드", "공시 유형", "중복·매칭 품질", "원본 뷰어"]
+(
+    tab_overview,
+    tab_events,
+    tab_ticker,
+    tab_health,
+    tab_feed,
+    tab_disc_types,
+    tab_quality,
+    tab_viewer,
+) = st.tabs(
+    [
+        "개요",
+        "이벤트 트리거",
+        "종목 페이지",
+        "소스 헬스",
+        "최근 피드",
+        "공시 유형",
+        "중복·매칭 품질",
+        "원본 뷰어",
+    ]
 )
 
 # ───────── 개요 ─────────
@@ -54,6 +74,159 @@ with tab_overview:
             .properties(height=300)
         )
         st.altair_chart(chart, use_container_width=True)
+
+# ───────── 이벤트 트리거 ─────────
+with tab_events:
+    st.subheader("이벤트 트리거 (룰 기반)")
+    st.caption(
+        "제목·공시명 키워드 매칭으로 시장 영향이 큰 이벤트를 즉시 노출. "
+        "방향(+/-/?)은 보수적 추정이며 맥락에 따라 다를 수 있음."
+    )
+
+    ec1, ec2, ec3, ec4 = st.columns([1, 2, 2, 1])
+    with ec1:
+        ev_hours = st.number_input(
+            "기간 (시간)", min_value=1, max_value=24 * 30, value=24, step=1, key="ev_hours"
+        )
+    with ec2:
+        ev_direction = st.selectbox(
+            "방향",
+            options=[("전체", None), ("긍정 +", "+"), ("부정 -", "-"), ("중립/혼합 ?", "?")],
+            format_func=lambda x: x[0],
+            index=0,
+            key="ev_dir",
+        )
+    with ec3:
+        ev_choices = ev.event_codes_available()
+        ev_picked = st.multiselect(
+            "이벤트 종류 (미선택=전체)",
+            options=[c for c, _ in ev_choices],
+            format_func=lambda c: dict(ev_choices).get(c, c),
+            key="ev_picked",
+        )
+    with ec4:
+        ev_ticker = st.text_input("종목코드", placeholder="005930", key="ev_ticker")
+
+    summary = ev.event_summary(conn, hours=int(ev_hours))
+    if not summary.empty:
+        scol1, scol2 = st.columns([2, 3])
+        with scol1:
+            st.markdown("**이벤트 카테고리 분포**")
+            st.dataframe(summary, use_container_width=True, hide_index=True)
+        with scol2:
+            chart = (
+                alt.Chart(summary)
+                .mark_bar()
+                .encode(
+                    x=alt.X("n:Q", title="건수"),
+                    y=alt.Y("event_label:N", sort="-x", title=None),
+                    color=alt.Color(
+                        "direction:N",
+                        scale=alt.Scale(
+                            domain=["+", "-", "?"], range=["#22c55e", "#ef4444", "#94a3b8"]
+                        ),
+                        legend=alt.Legend(title="방향"),
+                    ),
+                    tooltip=["event_label", "direction", "n"],
+                )
+                .properties(height=300)
+            )
+            st.altair_chart(chart, use_container_width=True)
+
+    events = ev.recent_events(
+        conn,
+        hours=int(ev_hours),
+        direction=ev_direction[1] if ev_direction else None,
+        event_codes=ev_picked or None,
+        ticker=ev_ticker.strip() or None,
+        limit=500,
+    )
+    if events.empty:
+        st.info("조건에 맞는 이벤트가 없습니다.")
+    else:
+        st.caption(f"이벤트 매칭 {len(events):,}건")
+        st.dataframe(
+            events[
+                [
+                    "occurred_at",
+                    "source",
+                    "event_label",
+                    "direction",
+                    "ticker",
+                    "entity",
+                    "title",
+                    "url",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+            column_config={"url": st.column_config.LinkColumn("url")},
+        )
+
+# ───────── 종목 페이지 ─────────
+with tab_ticker:
+    st.subheader("종목 페이지")
+    tc1, tc2 = st.columns([3, 1])
+    with tc1:
+        tq = st.text_input(
+            "종목 (종목코드 6자리 또는 회사명/별칭)",
+            placeholder="005930 또는 삼성전자",
+            key="tq",
+        )
+    with tc2:
+        tdays = st.selectbox("기간", options=[30, 60, 90], index=0, key="tdays")
+
+    if tq:
+        ticker = tv.resolve_ticker(conn, tq)
+        if ticker is None:
+            st.warning(f"매칭되는 종목을 찾지 못했습니다: {tq}")
+        else:
+            profile = tv.get_profile(conn, ticker, days=int(tdays))
+            tcA, tcB, tcC, tcD = st.columns(4)
+            tcA.metric("종목", f"{profile.ticker}")
+            tcB.metric("회사명", profile.corp_name or "-")
+            tcC.metric(f"{tdays}일 뉴스", f"{profile.news_count_30d:,}")
+            tcD.metric(f"{tdays}일 공시", f"{profile.disclosure_count_30d:,}")
+            st.caption(
+                f"최근 뉴스: {profile.last_news_at or '없음'} · "
+                f"최근 공시: {profile.last_disclosure_at or '없음'}"
+            )
+
+            volume = tv.get_daily_volume(conn, ticker, days=int(tdays))
+            if not volume.empty:
+                chart = (
+                    alt.Chart(volume)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X("day:T", title="날짜"),
+                        y=alt.Y("n:Q", title="건수"),
+                        color="source:N",
+                        tooltip=["day", "source", "n"],
+                    )
+                    .properties(height=240)
+                )
+                st.altair_chart(chart, use_container_width=True)
+
+            kw_col, tl_col = st.columns([1, 3])
+            with kw_col:
+                st.markdown("**자주 등장하는 단어**")
+                kws = tv.top_keywords_in_titles(conn, ticker, days=int(tdays), top_n=15)
+                if kws.empty:
+                    st.info("데이터 부족")
+                else:
+                    st.dataframe(kws, use_container_width=True, hide_index=True)
+            with tl_col:
+                st.markdown("**통합 타임라인**")
+                timeline = tv.get_timeline(conn, ticker, days=int(tdays))
+                if timeline.empty:
+                    st.info("해당 기간 데이터가 없습니다.")
+                else:
+                    st.dataframe(
+                        timeline,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={"url": st.column_config.LinkColumn("url")},
+                    )
 
 # ───────── 소스 헬스 ─────────
 with tab_health:

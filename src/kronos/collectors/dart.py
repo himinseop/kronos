@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -9,6 +10,92 @@ from kronos.storage.models import Disclosure
 
 DART_BASE_URL = "https://opendart.fss.or.kr/api"
 DART_VIEWER_URL = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}"
+
+# DART list.json 응답에 공시 유형 코드(pblntf_ty)가 빠져 있어 report_nm 패턴으로 추정한다.
+# 코드 의미: A=정기공시, B=주요사항보고, C=발행공시, D=지분공시, E=기타공시,
+#            F=외부감사, G=펀드공시, H=거래소공시, I=공정위공시, J=자율공시
+# 룰 적용 순서가 중요 — 더 구체적·고유한 패턴을 먼저 매칭한다.
+_PBLNTF_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # 우선순위: 명확한 wrapper / 고유 키워드 먼저
+    ("B", ("주요사항보고서",)),  # 'XXX결정' 같은 내부 키워드보다 wrapper가 우선
+    ("F", ("감사보고서", "외부감사", "감사인지정")),
+    ("G", ("집합투자증권", "투자신탁", "투자회사", "수익증권", "(집합투자")),
+    (
+        "D",
+        (
+            "주식등의대량보유",
+            "임원ㆍ주요주주",
+            "임원·주요주주",
+            "특정증권등소유",
+            "최대주주변경",
+            "최대주주등소유주식변동",
+            "지분변동",
+        ),
+    ),
+    (
+        "C",
+        (
+            "증권발행",
+            "투자설명서",
+            "전환사채권",
+            "신주인수권부사채",
+            "교환사채권",
+            "유상증자결정",
+            "무상증자결정",
+            "신주발행",
+            "전환가액조정",
+            "일괄신고",
+            "파생결합사채",
+            "파생결합증권",
+        ),
+    ),
+    ("I", ("대규모기업집단", "공정거래", "지주회사")),
+    (
+        "H",
+        (
+            "거래정지",
+            "관리종목",
+            "투자위험",
+            "투자주의",
+            "투자경고",
+            "상장폐지",
+            "조회공시",
+            "불성실공시",
+            "공시번복",
+        ),
+    ),
+    (
+        "J",
+        (
+            "공정공시",
+            "자율공시",
+            "지연공시",
+            "결산실적",
+            "기업설명회",
+            "단일판매ㆍ공급계약",
+            "단일판매·공급계약",
+            "기업지배구조보고서",
+            "주주총회결과",
+        ),
+    ),
+    ("B", ("타법인주식및출자증권", "자금차입")),  # wrapper 외 B 패턴
+    ("A", ("사업보고서", "분기보고서", "반기보고서", "연결재무제표")),
+)
+
+_BRACKET_PREFIX = re.compile(r"^\[[^\]]+\]")
+
+
+def infer_pblntf_ty(report_nm: str | None) -> str | None:
+    """report_nm 패턴으로 공시 유형 코드 추정. 기본은 'E'(기타공시)."""
+    if not report_nm:
+        return None
+    # [기재정정], [첨부정정] 같은 prefix 제거
+    name = _BRACKET_PREFIX.sub("", report_nm).strip()
+    for code, keywords in _PBLNTF_RULES:
+        for kw in keywords:
+            if kw in name:
+                return code
+    return "E"
 
 
 @dataclass
@@ -65,16 +152,19 @@ def _parse_dart_dt(raw: str) -> datetime:
 def _row_to_disclosure(row: dict) -> Disclosure:
     rcept_no = row["rcept_no"]
     stock_code = row.get("stock_code") or None
+    report_nm = row.get("report_nm", "").strip()
+    # DART list.json은 pblntf_ty를 응답에 포함하지 않으므로 report_nm 패턴으로 추정
+    pblntf_ty = row.get("pblntf_ty") or infer_pblntf_ty(report_nm)
     return Disclosure(
         rcept_no=rcept_no,
         corp_code=row.get("corp_code") or None,
         corp_name=row.get("corp_name") or None,
         ticker=stock_code if stock_code and stock_code.strip() else None,
-        report_nm=row.get("report_nm", "").strip(),
+        report_nm=report_nm,
         submitter=row.get("flr_nm") or None,
         rcept_dt=_parse_dart_dt(row["rcept_dt"]),
         source_url=DART_VIEWER_URL.format(rcept_no=rcept_no),
-        pblntf_ty=row.get("pblntf_ty") or None,
+        pblntf_ty=pblntf_ty,
         pblntf_detail_ty=row.get("pblntf_detail_ty") or None,
     )
 

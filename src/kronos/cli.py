@@ -27,9 +27,11 @@ app = typer.Typer(add_completion=False, help="Kronos CLI")
 collect_app = typer.Typer(help="데이터 수집 명령 (Phase 1)")
 tickers_app = typer.Typer(help="종목 사전 관리")
 match_app = typer.Typer(help="종목 매칭 백필")
+disclosures_app = typer.Typer(help="공시 데이터 관리")
 app.add_typer(collect_app, name="collect")
 app.add_typer(tickers_app, name="tickers")
 app.add_typer(match_app, name="match")
+app.add_typer(disclosures_app, name="disclosures")
 console = Console()
 
 
@@ -283,6 +285,32 @@ def match_backfill_cmd(
     table.add_row("Scanned", str(stats.scanned))
     table.add_row("Updated", str(stats.updated))
     console.print(table)
+
+
+@disclosures_app.command("reclassify")
+def disclosures_reclassify_cmd(
+    only_null: bool = typer.Option(True, help="pblntf_ty가 NULL인 행만 대상"),
+) -> None:
+    """report_nm 패턴 룰로 disclosures.pblntf_ty를 채움."""
+    from kronos.storage.reclassify import reclassify_disclosures
+
+    settings = get_settings()
+    db_path = settings.data_dir / "kronos.db"
+    stats = reclassify_disclosures(db_path, only_null=only_null)
+    table = Table(title="Disclosures Reclassify 결과")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    table.add_row("Scanned", str(stats.scanned))
+    table.add_row("Updated", str(stats.updated))
+    console.print(table)
+
+    if stats.distribution:
+        dist_table = Table(title="공시 유형 분포")
+        dist_table.add_column("pblntf_ty")
+        dist_table.add_column("count", justify="right")
+        for code, n in sorted(stats.distribution.items(), key=lambda x: -x[1]):
+            dist_table.add_row(code, str(n))
+        console.print(dist_table)
 
 
 if __name__ == "__main__":

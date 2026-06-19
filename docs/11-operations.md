@@ -8,41 +8,39 @@
 
 ## 배포 형태
 
-### 옵션 A: 로컬 머신 (MVP 권장)
-- 개인 PC에서 실행
-- macOS: `launchd` / Linux: `systemd`
-- 장점: 단순, 제로 비용
-- 단점: PC 종료 시 다운, 네트워크 불안정
+### 옵션 A: Docker Compose (현재 채택)
+- 로컬 머신(미니PC/맥)에서 `docker compose up -d`로 전체 스택 기동
+- `collector`(수집 스케줄러) + `dashboard`(Streamlit) 단일 이미지, 추후 `postgres` 추가
+- 재시작 정책 `restart: unless-stopped` → 프로세스가 죽으면 자동 복원
+- 재부팅 복원: **Docker Desktop "Start when you sign in"** 설정 시 자동 (macOS는 `AutoStart`)
+- 장점: 환경 일관성, 단일 명령 관리, 재부팅 복원, Phase 2 PG 추가가 자연스러움
+- 단점: Docker Desktop 상시 실행 필요
 
-### 옵션 B: 개인 서버 / VPS
-- 작은 클라우드 인스턴스 (월 1~2만원 수준)
-- Docker Compose로 단일 호스트 구성
-- 장점: 24/7 가용성
-- 단점: 보안·유지보수 필요
+### 옵션 B: 호스트 직접 실행 (Docker 미사용 환경)
+- macOS: `launchd` / Linux: `systemd`로 프로세스 관리
+- `scripts/install-launchd.sh`로 `com.kronos.runner`(KeepAlive) + `com.kronos.backup`(일 1회) 등록
+- Docker가 부담스러운 가벼운 호스트(라즈베리파이 등)나 단일 프로세스만 필요할 때
 
-### 옵션 C: 홈서버 (라즈베리파이 / 미니PC)
-- 집 네트워크
-- 전기세 외 고정비 없음
-- 네트워크 이중화 고려
-
-**MVP**: 옵션 A로 시작 → Phase 3 이후 옵션 B로 이관
+**현재 운영**: 옵션 A (Docker Compose). 옵션 B 스크립트는 대안으로 저장소에 유지.
 
 ## 프로세스 관리
 
-### macOS (`launchd`)
-- `~/Library/LaunchAgents/com.kronos.runner.plist` 배치
-- `RunAtLoad=true`, `KeepAlive=true`
-- 표준 출력은 로그 디렉토리로 리디렉트
+### Docker (현재)
+- `docker-compose.yml`: `collector`, `dashboard` (Phase 2에서 `postgres` 추가)
+- 재시작 정책 `unless-stopped`, 타임존 `TZ=Asia/Seoul` 환경변수 명시
+- SQLite는 `./data` 볼륨 마운트로 컨테이너 간 공유 + 호스트 영속
+- dashboard는 `127.0.0.1:8501`로만 publish (외부 노출은 Tailscale serve가 담당)
+- 주요 명령:
+  - `docker compose up -d --build` — 빌드 + 기동
+  - `docker compose logs -f collector` — 수집 로그
+  - `docker compose ps` / `docker compose down` — 상태 / 중지
 
-### Linux (`systemd`)
-- `/etc/systemd/system/kronos.service`
-- `Restart=on-failure` + `RestartSec=30`
-- `User=kronos` 전용 유저 사용
+### macOS (`launchd`, 대안)
+- `~/Library/LaunchAgents/com.kronos.runner.plist`, `RunAtLoad=true`, `KeepAlive=true`
+- `scripts/install-launchd.sh`가 템플릿을 렌더링해 등록
 
-### Docker (서버 운영 시)
-- `docker-compose.yml`: app, postgres, redis(선택)
-- 컨테이너 재시작 정책 `unless-stopped`
-- 타임존은 `Asia/Seoul` 명시
+### Linux (`systemd`, 대안)
+- `/etc/systemd/system/kronos.service`, `Restart=on-failure` + `RestartSec=30`
 
 ## 단일 인스턴스 보장
 

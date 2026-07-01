@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import altair as alt
+import pandas as pd
 import streamlit as st
 
 from kronos.config import get_settings
 from kronos.dashboard import events as ev
 from kronos.dashboard import queries as q
+from kronos.dashboard import sentiment_view as sv
 from kronos.dashboard import ticker_view as tv
 
 st.set_page_config(page_title="Kronos · 수집 모니터링", layout="wide")
@@ -26,6 +28,7 @@ st.caption(f"DB: `{DB_PATH}`")
 
 (
     tab_overview,
+    tab_sentiment,
     tab_events,
     tab_ticker,
     tab_health,
@@ -36,6 +39,7 @@ st.caption(f"DB: `{DB_PATH}`")
 ) = st.tabs(
     [
         "개요",
+        "감성",
         "이벤트 트리거",
         "종목 페이지",
         "소스 헬스",
@@ -74,6 +78,111 @@ with tab_overview:
             .properties(height=300)
         )
         st.altair_chart(chart, use_container_width=True)
+
+# ───────── 감성 ─────────
+with tab_sentiment:
+    st.subheader("감성 분석 (KR-FinBERT)")
+    cov = sv.coverage(conn)
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("분석 완료", f"{cov['scored']:,}")
+    m2.metric("미분석", f"{cov['pending']:,}")
+    m3.metric("커버리지", f"{cov['coverage']:.1%}")
+    m4.metric("뉴스 총계", f"{cov['news_total']:,}")
+
+    sc1, sc2 = st.columns([1, 1])
+    with sc1:
+        s_days = st.slider("기간 (일)", 1, 30, 7, key="s_days")
+    with sc2:
+        s_ticker = st.text_input("종목코드 (추세용, 선택)", placeholder="005930", key="s_ticker")
+
+    dist = sv.label_distribution(conn, days=int(s_days))
+    if dist.empty:
+        st.info("해당 기간 감성 데이터가 없습니다.")
+    else:
+        dcol, tcol = st.columns([1, 2])
+        with dcol:
+            st.markdown("**라벨 분포**")
+            chart = (
+                alt.Chart(dist)
+                .mark_arc()
+                .encode(
+                    theta="n:Q",
+                    color=alt.Color(
+                        "label:N",
+                        scale=alt.Scale(
+                            domain=["positive", "neutral", "negative"],
+                            range=["#22c55e", "#94a3b8", "#ef4444"],
+                        ),
+                    ),
+                    tooltip=["label", "n"],
+                )
+                .properties(height=240)
+            )
+            st.altair_chart(chart, use_container_width=True)
+        with tcol:
+            st.markdown("**일별 평균 감성 추세**" + (f" — {s_ticker}" if s_ticker else " (전체)"))
+            trend = sv.daily_sentiment_trend(
+                conn, ticker=s_ticker.strip() or None, days=int(s_days)
+            )
+            if trend.empty:
+                st.info("추세 데이터 없음")
+            else:
+                line = (
+                    alt.Chart(trend)
+                    .mark_line(point=True)
+                    .encode(
+                        x=alt.X("day:T", title="날짜"),
+                        y=alt.Y("avg_score:Q", title="평균 감성", scale=alt.Scale(domain=[-1, 1])),
+                        tooltip=["day", "avg_score", "n"],
+                    )
+                    .properties(height=240)
+                )
+                zero = (
+                    alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#cbd5e1").encode(y="y:Q")
+                )
+                st.altair_chart(zero + line, use_container_width=True)
+
+    st.divider()
+    tp, tn = st.columns(2)
+    with tp:
+        st.markdown("**긍정 상위 종목 (최근 3일)**")
+        pos = sv.top_by_sentiment(conn, positive=True, days=3)
+        if pos.empty:
+            st.caption("데이터 부족")
+        else:
+            st.dataframe(pos, use_container_width=True, hide_index=True)
+    with tn:
+        st.markdown("**부정 상위 종목 (최근 3일)**")
+        neg = sv.top_by_sentiment(conn, positive=False, days=3)
+        if neg.empty:
+            st.caption("데이터 부족")
+        else:
+            st.dataframe(neg, use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.markdown("**감성 점수가 붙은 최근 뉴스**")
+    fc1, fc2 = st.columns([1, 1])
+    with fc1:
+        f_label = st.selectbox(
+            "라벨", options=["전체", "positive", "negative", "neutral"], key="s_flabel"
+        )
+    with fc2:
+        f_ticker = st.text_input("종목코드", placeholder="005930", key="s_fticker")
+    feed = sv.recent_scored_feed(
+        conn,
+        label=None if f_label == "전체" else f_label,
+        ticker=f_ticker.strip() or None,
+        limit=200,
+    )
+    if feed.empty:
+        st.info("조건에 맞는 결과가 없습니다.")
+    else:
+        st.dataframe(
+            feed,
+            use_container_width=True,
+            hide_index=True,
+            column_config={"url": st.column_config.LinkColumn("url")},
+        )
 
 # ───────── 이벤트 트리거 ─────────
 with tab_events:

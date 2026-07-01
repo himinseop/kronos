@@ -63,6 +63,24 @@ CREATE TABLE IF NOT EXISTS collector_runs (
     error         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_runs_source_started ON collector_runs(source, started_at DESC);
+
+-- 감성/분류 결과 (Phase 2). target_type+target_id+model 조합이 유일.
+CREATE TABLE IF NOT EXISTS sentiments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_type   TEXT    NOT NULL,          -- 'news' | 'disclosure'
+    target_id     TEXT    NOT NULL,          -- news.id(문자열화) | disclosures.rcept_no
+    model         TEXT    NOT NULL,          -- 'kr-finbert-sc' 등
+    score         REAL    NOT NULL,          -- -1.0 ~ 1.0
+    label         TEXT    NOT NULL,          -- 'positive' | 'negative' | 'neutral'
+    confidence    REAL,                      -- 예측 확률(최대 클래스)
+    category      TEXT,                      -- LLM 분류 (Phase 2 후반)
+    rationale     TEXT,                      -- 근거 요약 (선택)
+    analyzed_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE(target_type, target_id, model)
+);
+CREATE INDEX IF NOT EXISTS idx_sentiments_target ON sentiments(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_sentiments_model  ON sentiments(model, analyzed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sentiments_label  ON sentiments(label);
 """
 
 

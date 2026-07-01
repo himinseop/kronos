@@ -19,6 +19,13 @@ dependencies = [
     "altair>=6.1.0",
 ]
 
+[project.optional-dependencies]
+# 감성분석용 (torch/transformers). 무거워서 sentiment 워커에서만 설치.
+analysis = [
+    "torch>=2.2",
+    "transformers>=4.40",
+]
+
 [project.scripts]
 kronos = "kronos.cli:app"
 

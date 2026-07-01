@@ -28,10 +28,12 @@ collect_app = typer.Typer(help="데이터 수집 명령 (Phase 1)")
 tickers_app = typer.Typer(help="종목 사전 관리")
 match_app = typer.Typer(help="종목 매칭 백필")
 disclosures_app = typer.Typer(help="공시 데이터 관리")
+analyze_app = typer.Typer(help="분석 명령 (Phase 2)")
 app.add_typer(collect_app, name="collect")
 app.add_typer(tickers_app, name="tickers")
 app.add_typer(match_app, name="match")
 app.add_typer(disclosures_app, name="disclosures")
+app.add_typer(analyze_app, name="analyze")
 console = Console()
 
 
@@ -311,6 +313,63 @@ def disclosures_reclassify_cmd(
         for code, n in sorted(stats.distribution.items(), key=lambda x: -x[1]):
             dist_table.add_row(code, str(n))
         console.print(dist_table)
+
+
+@analyze_app.command("sentiment")
+def analyze_sentiment_cmd(
+    limit: int = typer.Option(1000, help="이번 실행에서 점수화할 최대 건수"),
+    batch_size: int = typer.Option(64, help="모델 추론 배치 크기"),
+    all_pending: bool = typer.Option(False, "--all", help="미분석분 전량 처리 (반복 실행)"),
+) -> None:
+    """미분석 뉴스를 KR-FinBERT로 감성 점수화 (torch/transformers 필요)."""
+    from kronos.analysis.run import analyze_news_sentiment, pending_count
+    from kronos.analysis.sentiment import KrFinBertModel
+
+    settings = get_settings()
+    db_path = settings.data_dir / "kronos.db"
+
+    pending = pending_count(db_path)
+    console.print(f"미분석 뉴스: {pending:,}건")
+    if pending == 0:
+        return
+
+    model = KrFinBertModel()
+    total_scored = 0
+    while True:
+        stats = analyze_news_sentiment(db_path, model, limit=limit, batch_size=batch_size)
+        total_scored += stats.scored
+        console.print(f"  ... {total_scored:,}건 점수화")
+        if not all_pending or stats.scanned == 0:
+            break
+
+    table = Table(title="감성 분석 결과")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    table.add_row("Scored", str(total_scored))
+    table.add_row("Remaining", str(pending_count(db_path)))
+    console.print(table)
+
+
+@analyze_app.command("run")
+def analyze_run_cmd(
+    interval: int = typer.Option(300, help="사이클 간 대기 (초)"),
+    batch_size: int = typer.Option(64, help="모델 추론 배치 크기"),
+    limit_per_cycle: int = typer.Option(2000, help="사이클당 최대 처리 건수"),
+) -> None:
+    """감성 분석 루프 (sentiment 컨테이너 엔트리포인트). Ctrl+C로 종료."""
+    from kronos.analysis.run import run_sentiment_forever
+    from kronos.analysis.sentiment import KrFinBertModel
+
+    settings = get_settings()
+    db_path = settings.data_dir / "kronos.db"
+    console.print(f"[green]감성 분석 루프 시작[/green] — {interval}s 주기")
+    run_sentiment_forever(
+        db_path,
+        KrFinBertModel(),
+        interval_seconds=interval,
+        batch_size=batch_size,
+        limit_per_cycle=limit_per_cycle,
+    )
 
 
 if __name__ == "__main__":

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import io
-import sqlite3
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path
 from xml.etree import ElementTree
 
 import httpx
+import psycopg
 
 from kronos.logging_setup import get_logger
 from kronos.storage.db import connect, transaction
@@ -64,9 +63,9 @@ def parse_corpcode(xml_bytes: bytes):
         )
 
 
-def sync_tickers(db_path: Path, api_key: str) -> SyncStats:
+def sync_tickers(api_key: str, *, dsn: str | None = None) -> SyncStats:
     xml_bytes = fetch_corpcode_xml(api_key)
-    conn = connect(db_path)
+    conn = connect(dsn)
     ensure_schema(conn)
 
     stats = SyncStats(fetched=len(xml_bytes))
@@ -77,8 +76,8 @@ def sync_tickers(db_path: Path, api_key: str) -> SyncStats:
             cur = conn.execute(
                 """
                 INSERT INTO tickers (ticker, corp_code, corp_name, synced_at)
-                VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                ON CONFLICT(ticker) DO UPDATE SET
+                VALUES (%s, %s, %s, now())
+                ON CONFLICT (ticker) DO UPDATE SET
                   corp_code = excluded.corp_code,
                   corp_name = excluded.corp_name,
                   synced_at = excluded.synced_at
@@ -90,8 +89,9 @@ def sync_tickers(db_path: Path, api_key: str) -> SyncStats:
         for alias, ticker in DEFAULT_ALIASES.items():
             cur = conn.execute(
                 """
-                INSERT OR IGNORE INTO ticker_aliases (alias, ticker)
-                SELECT ?, ? WHERE EXISTS (SELECT 1 FROM tickers WHERE ticker = ?)
+                INSERT INTO ticker_aliases (alias, ticker)
+                SELECT %s, %s WHERE EXISTS (SELECT 1 FROM tickers WHERE ticker = %s)
+                ON CONFLICT (alias) DO NOTHING
                 """,
                 (alias, ticker, ticker),
             )
@@ -107,6 +107,6 @@ def sync_tickers(db_path: Path, api_key: str) -> SyncStats:
     return stats
 
 
-def db_has_tickers(conn: sqlite3.Connection) -> bool:
+def db_has_tickers(conn: psycopg.Connection) -> bool:
     row = conn.execute("SELECT 1 FROM tickers LIMIT 1").fetchone()
     return row is not None

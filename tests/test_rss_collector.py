@@ -52,28 +52,23 @@ def test_fetch_feed_http_error():
 
 
 @respx.mock
-def test_collect_rss_continues_past_bad_feed(tmp_path):
+def test_collect_rss_continues_past_bad_feed(db_conn, test_dsn):
     respx.get("https://good.example.com/feed.xml").mock(
         return_value=httpx.Response(200, content=SAMPLE_RSS.encode("utf-8"))
     )
     respx.get("https://bad.example.com/feed.xml").mock(return_value=httpx.Response(502))
 
-    db = tmp_path / "kronos.db"
     stats = collect_rss(
-        db,
         ["https://good.example.com/feed.xml", "https://bad.example.com/feed.xml"],
+        dsn=test_dsn,
     )
     assert stats.fetched == 2
     assert stats.inserted == 2
     assert stats.duplicates == 0
 
-    import sqlite3
-
-    conn = sqlite3.connect(db)
-    rows = conn.execute("SELECT COUNT(*) FROM news WHERE source='rss'").fetchone()[0]
+    rows = db_conn.execute("SELECT COUNT(*) AS n FROM news WHERE source='rss'").fetchone()["n"]
     assert rows == 2
-    # 실패한 피드가 있으므로 run.ok=0, error 컬럼에 메시지가 기록
-    run = conn.execute("SELECT ok, error FROM collector_runs WHERE source='rss'").fetchone()
-    assert run[0] == 0
-    assert "bad.example.com" in (run[1] or "")
-    conn.close()
+    # 실패한 피드가 있으므로 run.ok=false, error 컬럼에 메시지가 기록
+    run = db_conn.execute("SELECT ok, error FROM collector_runs WHERE source='rss'").fetchone()
+    assert run["ok"] is False
+    assert "bad.example.com" in (run["error"] or "")

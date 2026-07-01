@@ -8,10 +8,9 @@ from kronos.analysis.sentiment import (
     normalize_label,
     result_from_probs,
 )
-from kronos.storage.db import connect, transaction
+from kronos.storage.db import transaction
 from kronos.storage.models import NewsArticle
 from kronos.storage.repository import insert_news
-from kronos.storage.schema import ensure_schema
 
 
 def test_normalize_label_variants():
@@ -54,9 +53,7 @@ class FakeModel:
         return out
 
 
-def _seed_news(tmp_path):
-    conn = connect(tmp_path / "test.db")
-    ensure_schema(conn)
+def _seed_news(conn):
     now = datetime(2026, 7, 1, 9, 0, tzinfo=UTC)
     with transaction(conn):
         insert_news(
@@ -67,43 +64,39 @@ def _seed_news(tmp_path):
                 NewsArticle(source="rss", title="일반적인 시장 소식", published_at=now),
             ],
         )
-    conn.close()
-    return tmp_path / "test.db"
 
 
-def test_analyze_news_sentiment_scores_all(tmp_path):
-    db = _seed_news(tmp_path)
-    assert pending_count(db) == 3
+def test_analyze_news_sentiment_scores_all(db_conn, test_dsn):
+    _seed_news(db_conn)
+    assert pending_count(dsn=test_dsn) == 3
 
-    stats = analyze_news_sentiment(db, FakeModel(), limit=100, batch_size=2)
+    stats = analyze_news_sentiment(FakeModel(), limit=100, batch_size=2, dsn=test_dsn)
     assert stats.scanned == 3
     assert stats.scored == 3
-    assert pending_count(db) == 0
+    assert pending_count(dsn=test_dsn) == 0
 
-    conn = connect(db)
-    rows = conn.execute(
-        "SELECT label, COUNT(*) FROM sentiments GROUP BY label ORDER BY label"
+    rows = db_conn.execute(
+        "SELECT label, COUNT(*) AS n FROM sentiments GROUP BY label ORDER BY label"
     ).fetchall()
-    counts = {r[0]: r[1] for r in rows}
+    counts = {r["label"]: r["n"] for r in rows}
     assert counts == {"negative": 1, "neutral": 1, "positive": 1}
 
 
-def test_analyze_is_idempotent(tmp_path):
-    db = _seed_news(tmp_path)
-    analyze_news_sentiment(db, FakeModel(), limit=100)
+def test_analyze_is_idempotent(db_conn, test_dsn):
+    _seed_news(db_conn)
+    analyze_news_sentiment(FakeModel(), limit=100, dsn=test_dsn)
     # 두 번째 실행: 이미 다 분석됨 → 신규 0
-    stats2 = analyze_news_sentiment(db, FakeModel(), limit=100)
+    stats2 = analyze_news_sentiment(FakeModel(), limit=100, dsn=test_dsn)
     assert stats2.scanned == 0
     assert stats2.scored == 0
 
-    conn = connect(db)
-    total = conn.execute("SELECT COUNT(*) FROM sentiments").fetchone()[0]
+    total = db_conn.execute("SELECT COUNT(*) AS n FROM sentiments").fetchone()["n"]
     assert total == 3  # 중복 적재 없음
 
 
-def test_analyze_respects_limit(tmp_path):
-    db = _seed_news(tmp_path)
-    stats = analyze_news_sentiment(db, FakeModel(), limit=2)
+def test_analyze_respects_limit(db_conn, test_dsn):
+    _seed_news(db_conn)
+    stats = analyze_news_sentiment(FakeModel(), limit=2, dsn=test_dsn)
     assert stats.scanned == 2
     assert stats.scored == 2
-    assert pending_count(db) == 1
+    assert pending_count(dsn=test_dsn) == 1

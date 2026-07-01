@@ -39,26 +39,20 @@ def test_search_strips_html_and_parses():
 
 
 @respx.mock
-def test_collect_naver_persists_and_dedupes_on_rerun(tmp_path):
+def test_collect_naver_persists_and_dedupes_on_rerun(db_conn, test_dsn):
     respx.get("https://openapi.naver.com/v1/search/news.json").mock(
         return_value=httpx.Response(200, json=_SAMPLE)
     )
-    db = tmp_path / "kronos.db"
 
-    first = collect_naver(db, "id", "secret", ["삼성전자"])
+    first = collect_naver("id", "secret", ["삼성전자"], dsn=test_dsn)
     assert first.fetched == 2
     # 두 row는 제목이 달라 신규 등록됨
     assert first.inserted == 2
     assert first.duplicates == 0
 
     # 동일 질의 재호출 시 모두 중복
-    second = collect_naver(db, "id", "secret", ["삼성전자"])
+    second = collect_naver("id", "secret", ["삼성전자"], dsn=test_dsn)
     assert second.inserted == 0
     assert second.duplicates == 2
 
-    import sqlite3
-
-    conn = sqlite3.connect(db)
-    rows = conn.execute("SELECT COUNT(*) FROM news").fetchone()[0]
-    assert rows == 2
-    conn.close()
+    assert db_conn.execute("SELECT COUNT(*) AS n FROM news").fetchone()["n"] == 2

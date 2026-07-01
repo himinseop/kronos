@@ -19,6 +19,10 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # PostgreSQL 연결. 컨테이너에서는 DATABASE_URL 환경변수로 주입
+    # (host=postgres). 호스트 개발 시 기본값은 localhost:5432.
+    database_url: str = "postgresql://kronos:kronos@localhost:5432/kronos"
+
     data_dir: Path = PROJECT_ROOT / "data"
     log_dir: Path = PROJECT_ROOT / "logs"
 

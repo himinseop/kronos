@@ -3,10 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from kronos.dashboard.events import classify_event, recent_events
-from kronos.storage.db import connect, transaction
+from kronos.storage.db import transaction
 from kronos.storage.models import Disclosure, NewsArticle
 from kronos.storage.repository import insert_disclosures, insert_news
-from kronos.storage.schema import ensure_schema
 
 
 def test_classify_event_buyback():
@@ -39,9 +38,8 @@ def test_classify_event_supply_contract():
     assert hit.direction == "+"
 
 
-def test_recent_events_filters_by_window_and_direction(tmp_path):
-    conn = connect(tmp_path / "test.db")
-    ensure_schema(conn)
+def test_recent_events_filters_by_window_and_direction(db_conn):
+    conn = db_conn
     now = datetime.now(UTC)
 
     with transaction(conn):

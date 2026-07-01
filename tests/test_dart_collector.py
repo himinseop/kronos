@@ -93,36 +93,30 @@ def test_iter_disclosures_empty_returns_nothing():
 
 
 @respx.mock
-def test_collect_dart_persists_and_dedupes(tmp_path):
+def test_collect_dart_persists_and_dedupes(db_conn, test_dsn):
     response = _sample_response(list_=[_sample_row("20260519000001")])
     respx.get("https://opendart.fss.or.kr/api/list.json").mock(
         return_value=httpx.Response(200, json=response)
     )
 
-    db = tmp_path / "kronos.db"
     bgn = end = date(2026, 5, 19)
 
-    first = collect_dart(db, "key", bgn_de=bgn, end_de=end)
+    first = collect_dart("key", bgn_de=bgn, end_de=end, dsn=test_dsn)
     assert first.fetched == 1
     assert first.inserted == 1
     assert first.duplicates == 0
 
     # 두 번째 호출: 같은 rcept_no라 모두 중복으로 처리되어야 함
-    second = collect_dart(db, "key", bgn_de=bgn, end_de=end)
+    second = collect_dart("key", bgn_de=bgn, end_de=end, dsn=test_dsn)
     assert second.inserted == 0
     assert second.duplicates == 1
 
-    import sqlite3
+    assert db_conn.execute("SELECT COUNT(*) AS n FROM disclosures").fetchone()["n"] == 1
 
-    conn = sqlite3.connect(db)
-    rows = conn.execute("SELECT COUNT(*) FROM disclosures").fetchone()[0]
-    assert rows == 1
-
-    runs = conn.execute(
+    runs = db_conn.execute(
         "SELECT source, ok, fetched, inserted, duplicates FROM collector_runs ORDER BY id"
     ).fetchall()
     assert len(runs) == 2
-    assert runs[0][0] == "dart"
-    assert runs[0][1] == 1  # ok
-    assert runs[1][4] == 1  # second run all duplicates
-    conn.close()
+    assert runs[0]["source"] == "dart"
+    assert runs[0]["ok"] is True
+    assert runs[1]["duplicates"] == 1  # second run all duplicates

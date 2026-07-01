@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -19,7 +18,6 @@ log = get_logger(__name__)
 
 @dataclass(slots=True)
 class JobConfig:
-    db_path: Path
     dart_api_key: str | None
     naver_client_id: str | None
     naver_client_secret: str | None
@@ -27,6 +25,7 @@ class JobConfig:
     rss_feeds: list[str] = field(default_factory=lambda: list(DEFAULT_FEEDS))
     dart_interval_seconds: int = 30
     news_interval_seconds: int = 300  # 5분
+    dsn: str | None = None  # None이면 설정(DATABASE_URL) 사용
 
 
 def _safe(name: str, fn, *args, **kwargs):
@@ -41,25 +40,25 @@ def _run_dart(cfg: JobConfig):
     if not cfg.dart_api_key:
         return
     today = date.today()
-    collect_dart(cfg.db_path, cfg.dart_api_key, bgn_de=today, end_de=today)
+    collect_dart(cfg.dart_api_key, bgn_de=today, end_de=today, dsn=cfg.dsn)
 
 
 def _run_naver(cfg: JobConfig):
     if not (cfg.naver_client_id and cfg.naver_client_secret and cfg.naver_queries):
         return
     collect_naver(
-        cfg.db_path,
         cfg.naver_client_id,
         cfg.naver_client_secret,
         cfg.naver_queries,
         display=30,
+        dsn=cfg.dsn,
     )
 
 
 def _run_rss(cfg: JobConfig):
     if not cfg.rss_feeds:
         return
-    collect_rss(cfg.db_path, cfg.rss_feeds)
+    collect_rss(cfg.rss_feeds, dsn=cfg.dsn)
 
 
 def build_scheduler(cfg: JobConfig) -> BackgroundScheduler:

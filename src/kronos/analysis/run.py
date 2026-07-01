@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from kronos.analysis.sentiment import MODEL_ID, SentimentModel
 from kronos.logging_setup import get_logger
@@ -26,27 +25,27 @@ def _fetch_unscored_news(conn, model_id: str, limit: int) -> list[tuple[int, str
           FROM news n
           LEFT JOIN sentiments s
             ON s.target_type = 'news'
-           AND s.target_id = CAST(n.id AS TEXT)
-           AND s.model = ?
+           AND s.target_id = n.id::text
+           AND s.model = %s
          WHERE s.id IS NULL
          ORDER BY n.id DESC
-         LIMIT ?
+         LIMIT %s
         """,
         (model_id, limit),
     ).fetchall()
-    return [(r[0], r[1]) for r in rows]
+    return [(r["id"], r["title"]) for r in rows]
 
 
 def analyze_news_sentiment(
-    db_path: Path,
     model: SentimentModel,
     *,
     model_id: str = MODEL_ID,
     limit: int = 1000,
     batch_size: int = 64,
+    dsn: str | None = None,
 ) -> SentimentStats:
     """미분석 news를 최대 limit건 점수화. 한 번 호출 = 한 배치 사이클."""
-    conn = connect(db_path)
+    conn = connect(dsn)
     ensure_schema(conn)
 
     stats = SentimentStats()
@@ -66,9 +65,10 @@ def analyze_news_sentiment(
             for (news_id, _), res in zip(chunk, results, strict=True):
                 conn.execute(
                     """
-                    INSERT OR IGNORE INTO sentiments
+                    INSERT INTO sentiments
                       (target_type, target_id, model, score, label, confidence)
-                    VALUES ('news', ?, ?, ?, ?, ?)
+                    VALUES ('news', %s, %s, %s, %s, %s)
+                    ON CONFLICT (target_type, target_id, model) DO NOTHING
                     """,
                     (str(news_id), model_id, res.score, res.label, res.confidence),
                 )
@@ -81,12 +81,12 @@ def analyze_news_sentiment(
 
 
 def run_sentiment_forever(
-    db_path: Path,
     model: SentimentModel,
     *,
     interval_seconds: int = 300,
     batch_size: int = 64,
     limit_per_cycle: int = 2000,
+    dsn: str | None = None,
 ) -> None:
     """sentiment 컨테이너 엔트리포인트. 미분석분을 주기적으로 처리, SIGTERM에서 종료."""
     import signal
@@ -106,7 +106,7 @@ def run_sentiment_forever(
         drained_full = False
         try:
             stats = analyze_news_sentiment(
-                db_path, model, limit=limit_per_cycle, batch_size=batch_size
+                model, limit=limit_per_cycle, batch_size=batch_size, dsn=dsn
             )
             # 한 사이클에서 상한만큼 처리했다면 백로그가 남았다는 뜻 → 즉시 다음 사이클
             drained_full = stats.scanned >= limit_per_cycle
@@ -117,20 +117,20 @@ def run_sentiment_forever(
     log.info("sentiment.loop.stopped")
 
 
-def pending_count(db_path: Path, *, model_id: str = MODEL_ID) -> int:
-    conn = connect(db_path)
+def pending_count(*, model_id: str = MODEL_ID, dsn: str | None = None) -> int:
+    conn = connect(dsn)
     ensure_schema(conn)
-    n = conn.execute(
+    row = conn.execute(
         """
-        SELECT COUNT(*)
+        SELECT COUNT(*) AS n
           FROM news n
           LEFT JOIN sentiments s
             ON s.target_type = 'news'
-           AND s.target_id = CAST(n.id AS TEXT)
-           AND s.model = ?
+           AND s.target_id = n.id::text
+           AND s.model = %s
          WHERE s.id IS NULL
         """,
         (model_id,),
-    ).fetchone()[0]
+    ).fetchone()
     conn.close()
-    return n
+    return row["n"]

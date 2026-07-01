@@ -1,28 +1,26 @@
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
+
+import psycopg
+from psycopg.rows import dict_row
+
+from kronos.config import get_settings
 
 
-def connect(db_path: Path) -> sqlite3.Connection:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
-    return conn
+def connect(dsn: str | None = None) -> psycopg.Connection:
+    """PostgreSQL 연결. dsn 미지정 시 설정(DATABASE_URL) 사용.
+
+    row_factory=dict_row → 결과 행을 dict로 반환(row["col"]).
+    autocommit=True → 단발 read/write는 즉시 커밋, 명시적 트랜잭션은 transaction() 사용.
+    """
+    dsn = dsn or get_settings().database_url
+    return psycopg.connect(dsn, row_factory=dict_row, autocommit=True)
 
 
 @contextmanager
-def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
-    conn.execute("BEGIN")
-    try:
+def transaction(conn: psycopg.Connection) -> Iterator[psycopg.Connection]:
+    """명시적 트랜잭션 블록. 예외 시 롤백, 정상 시 커밋."""
+    with conn.transaction():
         yield conn
-    except BaseException:
-        conn.execute("ROLLBACK")
-        raise
-    else:
-        conn.execute("COMMIT")

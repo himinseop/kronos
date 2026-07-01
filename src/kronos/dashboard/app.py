@@ -15,16 +15,15 @@ from kronos.dashboard import ticker_view as tv
 st.set_page_config(page_title="Kronos · 수집 모니터링", layout="wide")
 
 settings = get_settings()
-DB_PATH = settings.data_dir / "kronos.db"
 
-if not DB_PATH.exists():
-    st.error(f"DB 파일이 없습니다: {DB_PATH}\n\n먼저 `uv run kronos collect dart`를 실행해 주세요.")
+try:
+    conn = q.open_db()
+except Exception as exc:
+    st.error(f"PostgreSQL 연결 실패: {exc}\n\ndocker compose up -d postgres 를 확인해 주세요.")
     st.stop()
 
-conn = q.open_db(DB_PATH)
-
 st.title("Kronos · 수집 모니터링")
-st.caption(f"DB: `{DB_PATH}`")
+st.caption("DB: PostgreSQL")
 
 (
     tab_overview,

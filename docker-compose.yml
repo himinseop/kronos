@@ -1,26 +1,49 @@
-# Kronos — 전체 스택 (Phase 2: SQLite + collector + sentiment + dashboard)
-# Phase 2 후반에 postgres 서비스 추가 검토.
+# Kronos — 전체 스택 (Phase 2: PostgreSQL + collector + sentiment + dashboard)
 #
 #   docker compose up -d --build       # 빌드 + 백그라운드 기동
 #   docker compose logs -f collector   # 수집 로그
 #   docker compose logs -f sentiment   # 감성분석 로그
 #   docker compose down                # 중지
 #
+# DB는 named volume(pgdata) — bind mount 위 SQLite 동시쓰기 손상 이슈를 근본 회피.
 # 재부팅 자동 복원: Docker Desktop "Start when you sign in" 설정 필요.
 
+x-app-env: &app-env
+  # 컨테이너는 host=postgres로 접속 (.env의 localhost DATABASE_URL을 덮어씀)
+  DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  LOG_DIR: /app/logs
+  TZ: Asia/Seoul
+
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: Asia/Seoul
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"  # 호스트 도구(마이그레이션·psql)용, localhost 전용
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   collector:
     build: .
     image: kronos:latest
     command: ["kronos", "run"]
     env_file: .env
-    environment:
-      DATA_DIR: /app/data
-      LOG_DIR: /app/logs
-      TZ: Asia/Seoul
+    environment: *app-env
     volumes:
-      - ./data:/app/data
       - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   sentiment:
@@ -31,23 +54,18 @@ services:
     command: ["kronos", "analyze", "run", "--interval", "300"]
     env_file: .env
     environment:
-      DATA_DIR: /app/data
-      LOG_DIR: /app/logs
-      TZ: Asia/Seoul
+      <<: *app-env
       HF_HOME: /app/.hf_cache
     volumes:
-      - ./data:/app/data
       - ./logs:/app/logs
       - hf_cache:/app/.hf_cache
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   dashboard:
     image: kronos:latest
-    # 이미 collector가 빌드한 이미지를 재사용
-    depends_on:
-      - collector
-    # 컨테이너 내부는 0.0.0.0 바인딩해야 publish가 닿음.
-    # 호스트에서는 127.0.0.1로만 publish → 외부 직접 노출 없음(Tailscale serve가 담당).
     command:
       - streamlit
       - run
@@ -57,16 +75,16 @@ services:
       - --server.headless=true
       - --browser.gatherUsageStats=false
     env_file: .env
-    environment:
-      DATA_DIR: /app/data
-      LOG_DIR: /app/logs
-      TZ: Asia/Seoul
+    environment: *app-env
     volumes:
-      - ./data:/app/data
       - ./logs:/app/logs
     ports:
       - "127.0.0.1:8501:8501"
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   hf_cache:
+  pgdata:

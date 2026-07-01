@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
+
+import psycopg
 
 
 @dataclass(slots=True)
@@ -10,20 +11,20 @@ class TickerEntry:
     name: str  # 매칭에 사용된 이름(또는 별칭)
 
 
-def _load_entries(conn: sqlite3.Connection) -> list[TickerEntry]:
+def _load_entries(conn: psycopg.Connection) -> list[TickerEntry]:
     rows = conn.execute("SELECT ticker, corp_name FROM tickers").fetchall()
     aliases = conn.execute("SELECT alias, ticker FROM ticker_aliases").fetchall()
-    entries = [TickerEntry(ticker=r[0], name=r[1]) for r in rows]
-    entries.extend(TickerEntry(ticker=r[1], name=r[0]) for r in aliases)
+    entries = [TickerEntry(ticker=r["ticker"], name=r["corp_name"]) for r in rows]
+    entries.extend(TickerEntry(ticker=r["ticker"], name=r["alias"]) for r in aliases)
     # 긴 이름부터 검색 (부분문자열 충돌 회피: "삼성전자" 가 "삼성"보다 먼저)
     entries.sort(key=lambda e: len(e.name), reverse=True)
     return entries
 
 
 class TickerMatcher:
-    """SQLite의 tickers + ticker_aliases를 메모리에 올려놓고 본문 매칭."""
+    """tickers + ticker_aliases를 메모리에 올려놓고 본문 매칭."""
 
-    def __init__(self, conn: sqlite3.Connection):
+    def __init__(self, conn: psycopg.Connection):
         self._entries = _load_entries(conn)
 
     def match(self, text: str | None) -> str | None:

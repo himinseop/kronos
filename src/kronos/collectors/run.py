@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, date, datetime
-from pathlib import Path
 
 from kronos.collectors import dart, naver, rss
 from kronos.logging_setup import get_logger
@@ -23,9 +22,11 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def collect_dart(db_path: Path, api_key: str, *, bgn_de: date, end_de: date) -> InsertStats:
-    """DART 공시를 조회해 SQLite에 적재."""
-    conn = connect(db_path)
+def collect_dart(
+    api_key: str, *, bgn_de: date, end_de: date, dsn: str | None = None
+) -> InsertStats:
+    """DART 공시를 조회해 PostgreSQL에 적재."""
+    conn = connect(dsn)
     ensure_schema(conn)
 
     started = _utcnow()
@@ -79,15 +80,15 @@ def collect_dart(db_path: Path, api_key: str, *, bgn_de: date, end_de: date) -> 
 
 
 def collect_naver(
-    db_path: Path,
     client_id: str,
     client_secret: str,
     queries: Iterable[str],
     *,
     display: int = 100,
+    dsn: str | None = None,
 ) -> InsertStats:
     """네이버 뉴스 검색 API로 키워드별 결과를 가져와 news 테이블에 적재."""
-    conn = connect(db_path)
+    conn = connect(dsn)
     ensure_schema(conn)
 
     started = _utcnow()
@@ -149,9 +150,9 @@ def collect_naver(
     return stats
 
 
-def collect_rss(db_path: Path, feed_urls: Iterable[str]) -> InsertStats:
+def collect_rss(feed_urls: Iterable[str], *, dsn: str | None = None) -> InsertStats:
     """RSS 피드 목록을 가져와 news 테이블에 적재. 일부 피드 실패는 로그만 남기고 진행."""
-    conn = connect(db_path)
+    conn = connect(dsn)
     ensure_schema(conn)
 
     started = _utcnow()

@@ -6,10 +6,12 @@ Phase 2 감성분석 진입 후에도 1차 필터로 계속 활용.
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 
 import pandas as pd
+import psycopg
+
+from kronos.dashboard.queries import query_df
 
 # (event_code, 표시 라벨, 매칭 키워드 튜플, 영향 방향 hint)
 # direction은 보수적 추정. 실제 시장 반응은 맥락에 따라 달라짐.
@@ -75,13 +77,13 @@ def _build_keyword_filter(column: str) -> tuple[str, list[str]]:
     params: list[str] = []
     for _, _, keywords, _ in EVENT_RULES:
         for kw in keywords:
-            likes.append(f"{column} LIKE ?")
+            likes.append(f"{column} LIKE %s")
             params.append(f"%{kw}%")
     return "(" + " OR ".join(likes) + ")", params
 
 
 def recent_events(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     *,
     hours: int = 24,
     direction: str | None = None,
@@ -96,13 +98,13 @@ def recent_events(
     extra_disc, extra_disc_params = [], []
     extra_news, extra_news_params = [], []
     if ticker:
-        extra_disc.append("ticker = ?")
+        extra_disc.append("ticker = %s")
         extra_disc_params.append(ticker)
-        extra_news.append("ticker = ?")
+        extra_news.append("ticker = %s")
         extra_news_params.append(ticker)
 
-    disc_extra_sql = " AND ".join(extra_disc) if extra_disc else "1=1"
-    news_extra_sql = " AND ".join(extra_news) if extra_news else "1=1"
+    disc_extra_sql = " AND ".join(extra_disc) if extra_disc else "TRUE"
+    news_extra_sql = " AND ".join(extra_news) if extra_news else "TRUE"
 
     sql = f"""
     SELECT 'dart'      AS source,
@@ -112,7 +114,7 @@ def recent_events(
            report_nm   AS title,
            source_url  AS url
       FROM disclosures
-     WHERE rcept_dt >= datetime('now', '-{int(hours)} hour')
+     WHERE rcept_dt >= now() - make_interval(hours => %s)
        AND {disc_kw}
        AND {disc_extra_sql}
     UNION ALL
@@ -123,14 +125,22 @@ def recent_events(
            title,
            url
       FROM news
-     WHERE published_at >= datetime('now', '-{int(hours)} hour')
+     WHERE published_at >= now() - make_interval(hours => %s)
        AND {news_kw}
        AND {news_extra_sql}
      ORDER BY occurred_at DESC
-     LIMIT ?
+     LIMIT %s
     """
-    params: list = [*disc_params, *extra_disc_params, *news_params, *extra_news_params, limit]
-    df = pd.read_sql_query(sql, conn, params=params)
+    params: list = [
+        hours,
+        *disc_params,
+        *extra_disc_params,
+        hours,
+        *news_params,
+        *extra_news_params,
+        limit,
+    ]
+    df = query_df(conn, sql, params)
 
     if df.empty:
         return df
@@ -149,7 +159,7 @@ def recent_events(
     return df.reset_index(drop=True)
 
 
-def event_summary(conn: sqlite3.Connection, *, hours: int = 24) -> pd.DataFrame:
+def event_summary(conn: psycopg.Connection, *, hours: int = 24) -> pd.DataFrame:
     """최근 N시간 이벤트 카테고리별 빈도."""
     df = recent_events(conn, hours=hours, limit=10000)
     if df.empty:

@@ -113,9 +113,7 @@ def collect_dart_cmd(
         end_de = date.today()
         bgn_de = end_de - timedelta(days=days)
 
-    db_path = settings.data_dir / "kronos.db"
     stats = collect_dart(
-        db_path,
         settings.dart_api_key.get_secret_value(),
         bgn_de=bgn_de,
         end_de=end_de,
@@ -128,7 +126,6 @@ def collect_dart_cmd(
     table.add_row("Inserted", str(stats.inserted))
     table.add_row("Duplicates", str(stats.duplicates))
     console.print(table)
-    console.print(f"[dim]DB: {db_path}[/dim]")
 
 
 @collect_app.command("naver")
@@ -144,9 +141,7 @@ def collect_naver_cmd(
 
     queries = queries or list(DEFAULT_NAVER_QUERIES)
 
-    db_path = settings.data_dir / "kronos.db"
     stats = collect_naver(
-        db_path,
         settings.naver_client_id.get_secret_value(),
         settings.naver_client_secret.get_secret_value(),
         queries,
@@ -160,19 +155,16 @@ def collect_naver_cmd(
     table.add_row("Inserted", str(stats.inserted))
     table.add_row("Duplicates", str(stats.duplicates))
     console.print(table)
-    console.print(f"[dim]DB: {db_path}[/dim]")
 
 
 @collect_app.command("rss")
 def collect_rss_cmd(
     feeds: list[str] = typer.Argument(None, help="RSS 피드 URL. 미지정 시 기본 피드 사용."),
 ) -> None:
-    """언론사 RSS 피드에서 뉴스를 수집해 SQLite에 적재."""
-    settings = get_settings()
+    """언론사 RSS 피드에서 뉴스를 수집해 PostgreSQL에 적재."""
     feeds = feeds or list(DEFAULT_FEEDS)
 
-    db_path = settings.data_dir / "kronos.db"
-    stats = collect_rss(db_path, feeds)
+    stats = collect_rss(feeds)
 
     table = Table(title=f"RSS 수집 결과 ({len(feeds)}개 피드)")
     table.add_column("Metric")
@@ -181,7 +173,6 @@ def collect_rss_cmd(
     table.add_row("Inserted", str(stats.inserted))
     table.add_row("Duplicates", str(stats.duplicates))
     console.print(table)
-    console.print(f"[dim]DB: {db_path}[/dim]")
 
 
 @tickers_app.command("sync")
@@ -191,8 +182,7 @@ def tickers_sync_cmd() -> None:
     if settings.dart_api_key is None:
         console.print("[red]DART_API_KEY 미설정. .env를 확인하세요.[/red]")
         raise typer.Exit(code=1)
-    db_path = settings.data_dir / "kronos.db"
-    stats = sync_tickers(db_path, settings.dart_api_key.get_secret_value())
+    stats = sync_tickers(settings.dart_api_key.get_secret_value())
     table = Table(title="Ticker Sync 결과")
     table.add_column("Metric")
     table.add_column("Value", justify="right")
@@ -252,7 +242,6 @@ def run_cmd(
     """스케줄러를 포그라운드에서 실행. Ctrl+C로 정상 종료."""
     settings = get_settings()
     cfg = JobConfig(
-        db_path=settings.data_dir / "kronos.db",
         dart_api_key=(settings.dart_api_key.get_secret_value() if settings.dart_api_key else None),
         naver_client_id=(
             settings.naver_client_id.get_secret_value() if settings.naver_client_id else None
@@ -278,9 +267,7 @@ def match_backfill_cmd(
     only_null: bool = typer.Option(True, help="ticker가 NULL인 행만 대상"),
 ) -> None:
     """기존 news 행에 종목 매칭을 적용해 ticker 컬럼을 채움."""
-    settings = get_settings()
-    db_path = settings.data_dir / "kronos.db"
-    stats = backfill_news_tickers(db_path, only_null=only_null)
+    stats = backfill_news_tickers(only_null=only_null)
     table = Table(title="News Ticker Backfill 결과")
     table.add_column("Metric")
     table.add_column("Value", justify="right")
@@ -296,9 +283,7 @@ def disclosures_reclassify_cmd(
     """report_nm 패턴 룰로 disclosures.pblntf_ty를 채움."""
     from kronos.storage.reclassify import reclassify_disclosures
 
-    settings = get_settings()
-    db_path = settings.data_dir / "kronos.db"
-    stats = reclassify_disclosures(db_path, only_null=only_null)
+    stats = reclassify_disclosures(only_null=only_null)
     table = Table(title="Disclosures Reclassify 결과")
     table.add_column("Metric")
     table.add_column("Value", justify="right")
@@ -325,10 +310,7 @@ def analyze_sentiment_cmd(
     from kronos.analysis.run import analyze_news_sentiment, pending_count
     from kronos.analysis.sentiment import KrFinBertModel
 
-    settings = get_settings()
-    db_path = settings.data_dir / "kronos.db"
-
-    pending = pending_count(db_path)
+    pending = pending_count()
     console.print(f"미분석 뉴스: {pending:,}건")
     if pending == 0:
         return
@@ -336,7 +318,7 @@ def analyze_sentiment_cmd(
     model = KrFinBertModel()
     total_scored = 0
     while True:
-        stats = analyze_news_sentiment(db_path, model, limit=limit, batch_size=batch_size)
+        stats = analyze_news_sentiment(model, limit=limit, batch_size=batch_size)
         total_scored += stats.scored
         console.print(f"  ... {total_scored:,}건 점수화")
         if not all_pending or stats.scanned == 0:
@@ -346,7 +328,7 @@ def analyze_sentiment_cmd(
     table.add_column("Metric")
     table.add_column("Value", justify="right")
     table.add_row("Scored", str(total_scored))
-    table.add_row("Remaining", str(pending_count(db_path)))
+    table.add_row("Remaining", str(pending_count()))
     console.print(table)
 
 
@@ -360,11 +342,8 @@ def analyze_run_cmd(
     from kronos.analysis.run import run_sentiment_forever
     from kronos.analysis.sentiment import KrFinBertModel
 
-    settings = get_settings()
-    db_path = settings.data_dir / "kronos.db"
     console.print(f"[green]감성 분석 루프 시작[/green] — {interval}s 주기")
     run_sentiment_forever(
-        db_path,
         KrFinBertModel(),
         interval_seconds=interval,
         batch_size=batch_size,

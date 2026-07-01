@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from kronos.logging_setup import get_logger
 from kronos.matching.matcher import TickerMatcher
@@ -17,9 +16,9 @@ class BackfillStats:
     updated: int = 0
 
 
-def backfill_news_tickers(db_path: Path, *, only_null: bool = True) -> BackfillStats:
+def backfill_news_tickers(*, only_null: bool = True, dsn: str | None = None) -> BackfillStats:
     """news.ticker가 NULL인 행을 대상으로 제목+본문 매칭 후 업데이트."""
-    conn = connect(db_path)
+    conn = connect(dsn)
     ensure_schema(conn)
     matcher = TickerMatcher(conn)
     stats = BackfillStats()
@@ -34,7 +33,7 @@ def backfill_news_tickers(db_path: Path, *, only_null: bool = True) -> BackfillS
             ticker = matcher.match(text)
             if ticker is None:
                 continue
-            conn.execute("UPDATE news SET ticker = ? WHERE id = ?", (ticker, row["id"]))
+            conn.execute("UPDATE news SET ticker = %s WHERE id = %s", (ticker, row["id"]))
             stats.updated += 1
 
     conn.close()

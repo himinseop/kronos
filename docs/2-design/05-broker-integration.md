@@ -66,7 +66,7 @@ class Broker(Protocol):
 
 ## 계정 준비 체크리스트
 
-> **진행 시점**: Phase 4 진입 직전 ([14-roadmap.md](./14-roadmap.md)). Phase 1~3(뉴스·공시 수집·분석·모니터링) 동안에는 KIS 계정 불필요 — 발급 절차에 시일이 걸리므로 Phase 3 후반에 미리 신청해두면 매끄럽다.
+> **진행 시점**: Phase 4 진입 직전 ([14-roadmap.md](../5-roadmap/14-roadmap.md)). Phase 1~3(뉴스·공시 수집·분석·모니터링) 동안에는 KIS 계정 불필요 — 발급 절차에 시일이 걸리므로 Phase 3 후반에 미리 신청해두면 매끄럽다.
 
 - [ ] 한국투자증권 **신규 계좌 개설** (비대면)
 - [ ] **KIS Developers** 가입: https://apiportal.koreainvestment.com

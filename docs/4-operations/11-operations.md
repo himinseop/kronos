@@ -8,39 +8,28 @@
 
 ## 배포 형태
 
-### 옵션 A: Docker Compose (현재 채택)
-- 로컬 머신(미니PC/맥)에서 `docker compose up -d`로 전체 스택 기동
-- `collector`(수집 스케줄러) + `dashboard`(Streamlit) 단일 이미지, 추후 `postgres` 추가
-- 재시작 정책 `restart: unless-stopped` → 프로세스가 죽으면 자동 복원
-- 재부팅 복원: **Docker Desktop "Start when you sign in"** 설정 시 자동 (macOS는 `AutoStart`)
-- 장점: 환경 일관성, 단일 명령 관리, 재부팅 복원, Phase 2 PG 추가가 자연스러움
-- 단점: Docker Desktop 상시 실행 필요
+> **현재 운영(2026-07-02)**: 하이브리드 — **PostgreSQL은 Docker 컨테이너**, **분석·수집·대시보드
+> 워커는 호스트 프로세스**, **자체 LLM(Ollama)은 네이티브**. 아래 배경 참조. 실행/중지 명령의
+> 정확한 최신본은 [STATUS.md](../STATUS.md)에 유지.
 
-### 옵션 B: 호스트 직접 실행 (Docker 미사용 환경)
-- macOS: `launchd` / Linux: `systemd`로 프로세스 관리
-- `scripts/install-launchd.sh`로 `com.kronos.runner`(KeepAlive) + `com.kronos.backup`(일 1회) 등록
-- Docker가 부담스러운 가벼운 호스트(라즈베리파이 등)나 단일 프로세스만 필요할 때
+### 현재: 하이브리드 (호스트 프로세스 + Docker PostgreSQL + 네이티브 Ollama)
+- **postgres**: `docker compose up -d postgres` (`pgdata` named volume, `127.0.0.1:5432`)
+- **워커(호스트)**: `kronos run`(수집), `kronos analyze run`(감성), `kronos analyze classify-run`(분류),
+  `kronos dashboard`(Streamlit) — 각 `logs/*.log`로 출력
+- **ollama**: `brew services` 네이티브 (macOS GPU/Metal 가속 — Docker는 CPU only라 5~10배 느림)
+- dashboard는 `127.0.0.1:8501`로만 바인딩, 외부 노출은 Tailscale serve가 담당
+- **왜 앱 컨테이너가 아닌 호스트 프로세스?**: Docker VM의 레지스트리 네트워크 고장으로
+  이미지 pull/build가 hang → 앱 컨테이너 재빌드 불가. 레지스트리 회복 시 컨테이너화 복귀 예정
+  (Ollama는 GPU 때문에 네이티브 유지). 상세는 STATUS.md
 
-**현재 운영**: 옵션 A (Docker Compose). 옵션 B 스크립트는 대안으로 저장소에 유지.
+### 목표: Docker Compose 전체화 (레지스트리 회복 후)
+- `collector` + `sentiment` + `classify` + `dashboard` + `postgres`를 compose로 통합
+- 재시작 정책 `restart: unless-stopped`, 타임존 `TZ=Asia/Seoul`
+- compose/Dockerfile은 이미 PG 대응 완료 (`docker compose build && up -d`)
 
-## 프로세스 관리
-
-### Docker (현재)
-- `docker-compose.yml`: `collector`, `dashboard` (Phase 2에서 `postgres` 추가)
-- 재시작 정책 `unless-stopped`, 타임존 `TZ=Asia/Seoul` 환경변수 명시
-- SQLite는 `./data` 볼륨 마운트로 컨테이너 간 공유 + 호스트 영속
-- dashboard는 `127.0.0.1:8501`로만 publish (외부 노출은 Tailscale serve가 담당)
-- 주요 명령:
-  - `docker compose up -d --build` — 빌드 + 기동
-  - `docker compose logs -f collector` — 수집 로그
-  - `docker compose ps` / `docker compose down` — 상태 / 중지
-
-### macOS (`launchd`, 대안)
-- `~/Library/LaunchAgents/com.kronos.runner.plist`, `RunAtLoad=true`, `KeepAlive=true`
-- `scripts/install-launchd.sh`가 템플릿을 렌더링해 등록
-
-### Linux (`systemd`, 대안)
-- `/etc/systemd/system/kronos.service`, `Restart=on-failure` + `RestartSec=30`
+### 대안: 호스트 서비스 등록 (launchd / systemd)
+- macOS: `launchd` (`scripts/install-launchd.sh` — KeepAlive + 일일 백업), `RunAtLoad`/`KeepAlive`
+- Linux: `/etc/systemd/system/kronos.service`, `Restart=on-failure` + `RestartSec=30`
 
 ## 단일 인스턴스 보장
 
@@ -112,9 +101,10 @@ logs/
   - 수집기 마지막 성공 시각, 연속 실패 수, API 호출 한도 사용률
   - 최근 뉴스·공시 피드 (종목·소스·기간·키워드 필터)
   - 공시 유형 분포, 중복률, 종목 매칭 성공률, 미매칭 샘플
-- **감성·분류** (Phase 2~)
-  - 피드에 감성 점수·라벨·카테고리 컬럼
-  - 분석 큐 상태, LLM 토큰·비용 사용량
+- **감성·분류** (Phase 2~, 구현됨)
+  - 감성 탭: 커버리지·라벨 분포·일별 추세·종목 상하위·점수 피드
+  - 카테고리 탭: 커버리지·분포·일별 스택 추세·카테고리별 상위 종목·분류 피드
+  - 자체 LLM(Ollama)이라 API 비용 없음 — 백로그 소진 진행률로 대체 모니터링
 - **시장 흐름** (Phase 3~)
   - 섹터×일자 감성 히트맵
   - Top Movers (감성 z-score 급등락)
@@ -150,8 +140,8 @@ logs/
 
 ## 백업
 
-- DB: 일 1회 덤프 (`sqlite .backup` 또는 `pg_dump`), 외부 저장소 동기화
-- 설정 파일: git 관리
+- DB: 일 1회 `pg_dump` (PostgreSQL), 외부 저장소 동기화
+- 설정 파일: git 관리 (`.env`는 gitignore — [12-security.md](./12-security.md))
 - 로그: 월 단위 아카이브
 
 ## 배포 프로세스

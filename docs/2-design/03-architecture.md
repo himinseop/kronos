@@ -17,7 +17,7 @@
              └────────┬─────┴──────────────┘
                       ▼
               ┌───────────────┐
-              │   Data Lake   │  SQLite (MVP) → PG/Timescale
+              │   Data Lake   │  PostgreSQL (현재) → +TimescaleDB(시세)
               │  (raw + curated) │
               └──────┬────────┘
                      │
@@ -59,8 +59,10 @@
 - 실패 시 재시도, 결손 탐지
 
 ### Data Lake
-- **Phase 1 (수집)**: SQLite (단일 파일, 백업 쉬움)
-- **Phase 2 (감성분석) 진입 시 PostgreSQL로 전환** — 동시 쓰기·인덱스·집계 쿼리 부담 증가
+- **현재: PostgreSQL 16** (Docker, `pgdata` named volume). psycopg3 + `dict_row` 사용.
+- Phase 1은 SQLite로 시작했으나, Phase 2에서 다중 워커(collector+sentiment+classify)가
+  동시 기록하며 macOS Docker bind mount 위 SQLite가 손상 → **PostgreSQL로 조기 전환**
+  (2026-07-02, [history/2026-07-02.md](../history/2026-07-02.md)).
 - **장기 확장**: PostgreSQL + TimescaleDB (시계열 압축, 대용량 시세)
 
 #### 핵심 테이블 스키마 (PostgreSQL)
@@ -97,16 +99,20 @@ CREATE TABLE sentiments (
   id           BIGSERIAL PRIMARY KEY,
   target_type  TEXT NOT NULL,          -- 'news' | 'disclosure'
   target_id    TEXT NOT NULL,          -- news.id 또는 disclosures.rcept_no
-  model        TEXT NOT NULL,          -- 'kr-finbert-v1', 'claude-opus-4-7' 등
+  model        TEXT NOT NULL,          -- 'kr-finbert-sc'(감성), 'cat:<모델>'(카테고리)
   score        REAL NOT NULL,          -- -1.0 ~ 1.0
-  label        TEXT NOT NULL,          -- 'positive' | 'negative' | 'neutral'
-  category     TEXT,                   -- LLM 분류 (실적/계약/규제/M&A/...)
-  rationale    TEXT,                   -- LLM이 부여한 근거 요약 (선택)
-  analyzed_at  TIMESTAMPTZ DEFAULT now()
+  label        TEXT NOT NULL,          -- 'positive'|'negative'|'neutral' 또는 카테고리 key
+  category     TEXT,                   -- 자체 LLM 분류 (실적/계약/규제/M&A/...)
+  rationale    TEXT,                   -- LLM 근거 요약 (선택)
+  analyzed_at  TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (target_type, target_id, model)  -- 감성·카테고리를 model로 구분해 공존
 );
 CREATE INDEX ON sentiments (target_type, target_id);
 CREATE INDEX ON sentiments (model, analyzed_at DESC);
 ```
+
+> 감성(KR-FinBERT)과 카테고리(자체 LLM)는 **같은 sentiments 테이블**에 `model` 값으로
+> 구분해 저장한다. 한 뉴스가 감성 행 1개 + 카테고리 행 1개를 가질 수 있다.
 
 - 매매 단계(Phase 4~)에서 추가될 테이블: `ohlcv_daily`, `ohlcv_minute`, `financials`, `orders`, `fills`, `pnl`
 
@@ -133,11 +139,12 @@ CREATE INDEX ON sentiments (model, analyzed_at DESC);
 
 ### Dashboard / Notifier
 - **Streamlit 대시보드는 Phase 1부터 도입** (수집 즉시 모니터링). 단계별로 탭을 추가:
-  - Phase 1: 수집 개요 / 소스 헬스 / 최근 뉴스·공시 피드 / 중복·매칭 품질
-  - Phase 2: 감성·카테고리 필터, 분석 큐 상태, LLM 비용
+  - Phase 1: 수집 개요 / 소스 헬스 / 최근 뉴스·공시 피드 / 공시 유형 / 중복·매칭 품질 (구현됨)
+  - Phase 2: 감성 탭 + 카테고리 탭 (커버리지·분포·추세·종목별·피드) (구현됨).
+    자체 LLM(Ollama)이라 LLM 비용 없음 — 대신 백로그 소진 진행률을 노출
   - Phase 3: 시장 흐름 (섹터 히트맵, Top Movers, 종목 상세 타임라인)
   - Phase 6~: 포지션·PnL, 주문·신호, 전략별 성과, API 헬스
-- 로컬 전용(`localhost`), 원격 노출 시 인증 필수 ([12-security.md](./12-security.md))
+- 로컬 전용(`localhost`), 원격 노출 시 인증 필수 ([12-security.md](../4-operations/12-security.md))
 - Notifier: 텔레그램 봇 — 수집 장애, 중요 공시 급변, 체결·리스크 이벤트, 일일 요약
 
 ## 데이터 흐름 패턴
@@ -169,4 +176,7 @@ CREATE INDEX ON sentiments (model, analyzed_at DESC);
 
 - **모놀리식 프로세스**로 시작. 마이크로서비스는 불필요한 복잡도
 - **동기 코드 우선**, 성능 필요한 부분만 asyncio 도입 (WebSocket 구독 등)
-- 프로세스 단일 인스턴스 보장 (파일락 또는 systemd)
+- 매매 프로세스는 단일 인스턴스 보장(파일락/systemd) — 중복 주문 방지 (Phase 6~)
+- 분석 워커(sentiment·classify)는 PostgreSQL 동시성으로 안전하게 병렬 실행.
+  자체 LLM은 Ollama(OpenAI 호환, `localhost:11434/v1`)로 분리 — mycomai 등과 공유 가능한
+  호스트 네이티브 인프라 (macOS GPU/Metal 가속 위해 컨테이너화하지 않음)

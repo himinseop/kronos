@@ -48,10 +48,13 @@
 - **backtrader** — 보조
 
 ### 자연어 처리 (Phase 2~)
-- **transformers** (HuggingFace) — **KR-FinBERT 우선** (`snunlp/KR-FinBert-SC`), 폴백으로 KoBERT/KoELECTRA. 일반 한국어 모델은 금융 어휘 맥락 부족
-- **sentence-transformers** — 임베딩·중복 제거
-- **torch** — 모델 런타임
-- **anthropic / openai** SDK — LLM 호출 (카테고리 분류·이벤트 추출)
+- **transformers** (HuggingFace) — **KR-FinBERT** (`snunlp/KR-FinBert-SC`) 감성 분석에 사용 중.
+  일반 한국어 모델은 금융 어휘 맥락 부족. `analysis` extra로 설치(torch 포함)
+- **torch** — KR-FinBERT 런타임
+- **자체 LLM (Ollama)** — 카테고리 분류에 사용 중. `qwen2.5:3b-instruct`(Q4)를
+  OpenAI 호환 `localhost:11434/v1`로 호출(httpx). 외부 API(anthropic/openai) 대신
+  **자체 호스팅**으로 비용 0·데이터 외부 유출 없음. mycomai 등과 서버 공유 가능
+- (선택) **sentence-transformers** — 임베딩·근사 중복 제거 (미도입)
 
 ### CLI / 대시보드
 - **typer** — CLI
@@ -77,17 +80,20 @@
 
 ## 데이터 저장
 
-### MVP
-- **SQLite** (`kronos.db`)
-  - 단일 파일, 백업 쉬움
-  - 트랜잭션 지원
-  - 적당한 속도
+### 현재: PostgreSQL 16 (Docker)
+- **psycopg 3** (`dict_row`, autocommit) — SQL 직접 작성
+- `pgdata` named volume, 포트 `127.0.0.1:5432`, healthcheck
+- Phase 1은 SQLite로 시작했으나 다중 워커 동시쓰기 손상 사고로 조기 전환
+  (SQLite는 macOS Docker bind mount에서 WAL 락 미보장 → 손상). 상세는
+  [../history/2026-07-02.md](../history/2026-07-02.md)
 
 ### 확장
-- **PostgreSQL** + **TimescaleDB**
-  - 시계열 압축·쿼리 최적화
-  - 대용량 틱/분봉에 적합
+- **PostgreSQL** + **TimescaleDB** — 시세(틱/분봉) 도입 시 시계열 압축·쿼리 최적화
 - 캐시: **Redis** (필요 시)
+
+### 자체 LLM 인프라
+- **Ollama** (네이티브, `brew services`) — OpenAI 호환 서버. macOS GPU(Metal) 가속을 위해
+  Docker가 아닌 네이티브. Linux+NVIDIA 이전 시 컨테이너화 검토
 
 ### 파일
 - 원본 공시·뉴스 텍스트: 로컬 디스크 또는 S3 호환(미니오) 저장

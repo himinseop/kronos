@@ -9,7 +9,7 @@
 
 ## Phase 0 — 환경 설정 (약 1주)
 
-**목표**: 뉴스·공시 수집에 필요한 최소 환경 구축. **KIS 계정은 이 단계에서 제외** — Phase 4(시세·매매 진입) 직전에 별도로 진행 ([05-broker-integration.md](./05-broker-integration.md)).
+**목표**: 뉴스·공시 수집에 필요한 최소 환경 구축. **KIS 계정은 이 단계에서 제외** — Phase 4(시세·매매 진입) 직전에 별도로 진행 ([05-broker-integration.md](../2-design/05-broker-integration.md)).
 
 ### 작업
 - [ ] DART Open API 키 발급 (https://opendart.fss.or.kr)
@@ -179,7 +179,7 @@
 **목표**: 시스템 안전장치를 견고하게.
 
 ### 작업
-- [ ] Risk Engine (사전 검증 9종 — [09-risk-management.md](./09-risk-management.md) 참조)
+- [ ] Risk Engine (사전 검증 9종 — [09-risk-management.md](../3-trading/09-risk-management.md) 참조)
 - [ ] 일일 손실 한도 / 종목·섹터 한도 / 동시 보유 종목 수 제한
 - [ ] Kill Switch (수동 + 자동, 즉시 정지)
 - [ ] 리스크 엔진 단위 테스트 커버리지 > 80%
@@ -222,7 +222,7 @@
 - [ ] **실전 API 키가 모의 키와 분리**되어 있음 재확인
 - [ ] 일일 손실 한도 보수적으로 설정 (자본의 -2% 등)
 - [ ] 텔레그램 알림 정상 동작
-- [ ] 장애 대응 플레이북 숙지 ([11-operations.md](./11-operations.md))
+- [ ] 장애 대응 플레이북 숙지 ([11-operations.md](../4-operations/11-operations.md))
 
 ---
 

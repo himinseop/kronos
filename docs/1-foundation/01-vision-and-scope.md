@@ -41,7 +41,7 @@
 
 ## 단계별 확장 (Phase 10 이후)
 
-- **미국 주식 (NYSE/NASDAQ)** — 한국 시장 안정 운영 후 확장 ([14-roadmap.md](./14-roadmap.md) Phase 10 참조)
+- **미국 주식 (NYSE/NASDAQ)** — 한국 시장 안정 운영 후 확장 ([14-roadmap.md](../5-roadmap/14-roadmap.md) Phase 10 참조)
 
 ## Out-of-Scope (다루지 않는 것)
 

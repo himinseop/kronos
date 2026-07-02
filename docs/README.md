@@ -13,40 +13,64 @@
 3. **Phase 8~9**: 모의투자 4주 검증 → 소액 실전
 4. **Phase 10~**: 미국 시장 확장, 고도화
 
-전체 일정은 [14-roadmap.md](./14-roadmap.md) 참조.
+전체 일정은 [14-roadmap.md](./5-roadmap/14-roadmap.md) 참조.
 
 ## 이 디렉토리는?
 
-`docs/`는 **코드 작성 이전** 단계의 준비 문서 모음입니다. 자동매매는 돈이 직접 오가는 시스템이라, 구현 전에 범위·데이터·리스크·법적 제약을 명확히 기록해두는 것이 시행착오와 사고를 크게 줄여줍니다.
+`docs/`는 프로젝트의 **결정 기록**과 **운영 상태**를 담습니다. 처음에는 코드 작성 이전의 준비 문서로 시작했고(범위·데이터·리스크·법적 제약을 미리 기록), 현재는 구현이 진행되며 실제 상태를 함께 반영하고 있습니다.
 
 각 문서는 **"어떤 선택지가 있고, 무엇을 골랐으며, 왜 그랬는지"** 기록에 집중합니다.
+
+### 현재 상태를 보려면
+
+- [STATUS.md](./STATUS.md) — **지금 무엇이 돌고 있는지** (living document, 매 작업 갱신)
+- [history/](./history/) — **일자별 작업 히스토리** (무엇을·왜 했는지 시간순 로그)
+- [14-roadmap.md](./5-roadmap/14-roadmap.md) — Phase별 계획과 진행 체크리스트
+
+> **구현 진행도 (2026-07-02)**: Phase 1(뉴스·공시 수집) 완료·운영 중,
+> Phase 2(감성분석·카테고리 분류) 진행 중. 저장소는 PostgreSQL,
+> 감성은 KR-FinBERT, 카테고리 분류는 자체 LLM(Ollama). 상세는 STATUS.md.
+
+### 폴더 구조
+
+```
+docs/
+├── README.md              # 이 문서 (인덱스)
+├── STATUS.md              # 현재 운영 상태 (living)
+├── history/               # 일자별 작업 히스토리
+├── 1-foundation/          # 프로젝트 이해 (비전·요구사항·용어)
+├── 2-design/              # 시스템 설계 (아키텍처·데이터·증권사·기술스택)
+├── 3-trading/             # 매매 로직 (전략·분석엔진·백테스트·리스크)
+├── 4-operations/          # 운영·보안·법
+└── 5-roadmap/             # 실행 계획 (Phase 로드맵)
+```
 
 ## 읽기 순서 (추천)
 
 ### 1) 프로젝트 이해
-- [01-vision-and-scope.md](./01-vision-and-scope.md) — 왜 이 프로젝트를 하는가, 성공 기준
-- [02-requirements.md](./02-requirements.md) — 해야 할 일 / 하지 않을 일
-- [15-glossary.md](./15-glossary.md) — 용어가 낯설면 먼저 훑어보기
+- [01-vision-and-scope.md](./1-foundation/01-vision-and-scope.md) — 왜 이 프로젝트를 하는가, 성공 기준
+- [02-requirements.md](./1-foundation/02-requirements.md) — 해야 할 일 / 하지 않을 일
+- [15-glossary.md](./1-foundation/15-glossary.md) — 용어가 낯설면 먼저 훑어보기
 
 ### 2) 시스템 설계
-- [03-architecture.md](./03-architecture.md) — 컴포넌트와 데이터 흐름
-- [04-data-sources.md](./04-data-sources.md) — 시세·재무·공시·뉴스 데이터 출처
-- [05-broker-integration.md](./05-broker-integration.md) — 증권사 API 선택
-- [10-tech-stack.md](./10-tech-stack.md) — 라이브러리/DB/도구 결정
+- [03-architecture.md](./2-design/03-architecture.md) — 컴포넌트와 데이터 흐름
+- [04-data-sources.md](./2-design/04-data-sources.md) — 시세·재무·공시·뉴스 데이터 출처
+- [05-broker-integration.md](./2-design/05-broker-integration.md) — 증권사 API 선택
+- [10-tech-stack.md](./2-design/10-tech-stack.md) — 라이브러리/DB/도구 결정
 
 ### 3) 매매 로직
-- [06-strategy-design.md](./06-strategy-design.md) — 4가지 스타일 전략 프레임워크
-- [07-analysis-engines.md](./07-analysis-engines.md) — 뉴스 NLP + 기업평가
-- [08-backtesting.md](./08-backtesting.md) — 백테스팅 도구와 함정
-- [09-risk-management.md](./09-risk-management.md) — **가장 중요한 문서. 꼭 읽을 것**
+- [06-strategy-design.md](./3-trading/06-strategy-design.md) — 4가지 스타일 전략 프레임워크
+- [07-analysis-engines.md](./3-trading/07-analysis-engines.md) — 뉴스 NLP + 기업평가
+- [08-backtesting.md](./3-trading/08-backtesting.md) — 백테스팅 도구와 함정
+- [09-risk-management.md](./3-trading/09-risk-management.md) — **가장 중요한 문서. 꼭 읽을 것**
 
 ### 4) 운영·보안·법
-- [11-operations.md](./11-operations.md) — 배포, 로깅, 장애 대응
-- [12-security.md](./12-security.md) — API 키·자격증명 관리
-- [13-legal-and-compliance.md](./13-legal-and-compliance.md) — 법적 고려사항
+- [11-operations.md](./4-operations/11-operations.md) — 배포, 로깅, 장애 대응
+- [12-security.md](./4-operations/12-security.md) — API 키·자격증명 관리
+- [13-legal-and-compliance.md](./4-operations/13-legal-and-compliance.md) — 법적 고려사항
 
 ### 5) 실행 계획
-- [14-roadmap.md](./14-roadmap.md) — Phase별 마일스톤과 Definition of Done
+- [14-roadmap.md](./5-roadmap/14-roadmap.md) — Phase별 마일스톤과 Definition of Done
 
 ## 문서 작성 원칙
 
@@ -57,4 +81,4 @@
 
 ## 면책
 
-본 저장소는 **개인용** 매매 자동화를 위한 기록입니다. 투자 조언이 아니며, 타인 자산 운용 시 관련 법령(자본시장법 등) 확인이 필요합니다. 자세한 내용은 [13-legal-and-compliance.md](./13-legal-and-compliance.md)를 참조하세요.
+본 저장소는 **개인용** 매매 자동화를 위한 기록입니다. 투자 조언이 아니며, 타인 자산 운용 시 관련 법령(자본시장법 등) 확인이 필요합니다. 자세한 내용은 [13-legal-and-compliance.md](./4-operations/13-legal-and-compliance.md)를 참조하세요.

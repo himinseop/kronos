@@ -60,7 +60,7 @@
 **선택**:
 - **Phase 1 MVP**: 네이버 뉴스 검색 API + 언론사 RSS — KIS 계정 없이 즉시 시작 가능
 - **Phase 4 추가**: KIS 종목뉴스 API (KIS 계정 발급 이후, 동일 수집 인터페이스에 어댑터로 연결)
-- 뉴스-종목 매핑은 [07-analysis-engines.md](./07-analysis-engines.md) 참조
+- 뉴스-종목 매핑은 [07-analysis-engines.md](../3-trading/07-analysis-engines.md) 참조
 
 ## 미국 시장 확장 시 (Phase 10)
 

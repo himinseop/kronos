@@ -158,4 +158,4 @@ Signal(
 - 각 전략은 **독립 모듈**, 디렉토리 한 개
 - 전략 파라미터는 YAML/JSON으로 외부화 (`strategies/mean_reversion/config.yaml`)
 - 전략 추가는 **플러그인 등록**으로 (`entry_points` 또는 내부 레지스트리)
-- 신규 전략은 백테스트 통과 → 모의투자 2주 → 실전 투입 순서 ([14-roadmap.md](./14-roadmap.md))
+- 신규 전략은 백테스트 통과 → 모의투자 2주 → 실전 투입 순서 ([14-roadmap.md](../5-roadmap/14-roadmap.md))

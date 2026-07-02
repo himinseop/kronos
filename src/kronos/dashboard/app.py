@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from kronos.config import get_settings
+from kronos.dashboard import category_view as cv
 from kronos.dashboard import events as ev
 from kronos.dashboard import queries as q
 from kronos.dashboard import sentiment_view as sv
@@ -28,6 +29,7 @@ st.caption("DB: PostgreSQL")
 (
     tab_overview,
     tab_sentiment,
+    tab_category,
     tab_events,
     tab_ticker,
     tab_health,
@@ -39,6 +41,7 @@ st.caption("DB: PostgreSQL")
     [
         "개요",
         "감성",
+        "카테고리",
         "이벤트 트리거",
         "종목 페이지",
         "소스 헬스",
@@ -171,6 +174,92 @@ with tab_sentiment:
         conn,
         label=None if f_label == "전체" else f_label,
         ticker=f_ticker.strip() or None,
+        limit=200,
+    )
+    if feed.empty:
+        st.info("조건에 맞는 결과가 없습니다.")
+    else:
+        st.dataframe(
+            feed,
+            use_container_width=True,
+            hide_index=True,
+            column_config={"url": st.column_config.LinkColumn("url")},
+        )
+
+# ───────── 카테고리 ─────────
+with tab_category:
+    st.subheader("카테고리 분류 (자체 LLM · Ollama)")
+    st.caption(
+        "종목 매칭된 뉴스 제목을 로컬 LLM으로 실적/계약/규제/M&A 등으로 분류. "
+        "백로그를 최신순으로 소진 중이라 오래된 뉴스는 아직 미분류일 수 있음."
+    )
+    ccov = cv.coverage(conn)
+    cm1, cm2, cm3, cm4 = st.columns(4)
+    cm1.metric("분류 완료", f"{ccov['classified']:,}")
+    cm2.metric("미분류", f"{ccov['pending']:,}")
+    cm3.metric("커버리지", f"{ccov['coverage']:.1%}")
+    cm4.metric("대상(종목뉴스)", f"{ccov['target']:,}")
+
+    c_days = st.slider("기간 (일)", 1, 90, 30, key="c_days")
+
+    cdist = cv.category_distribution(conn, days=int(c_days))
+    if cdist.empty:
+        st.info("해당 기간 분류 데이터가 없습니다. (분류 워커가 백로그를 처리 중일 수 있음)")
+    else:
+        dcol, tcol = st.columns([1, 2])
+        with dcol:
+            st.markdown("**카테고리 분포**")
+            bar = (
+                alt.Chart(cdist)
+                .mark_bar()
+                .encode(
+                    x=alt.X("n:Q", title="건수"),
+                    y=alt.Y("label:N", sort="-x", title=None),
+                    tooltip=["label", "n"],
+                )
+                .properties(height=300)
+            )
+            st.altair_chart(bar, use_container_width=True)
+        with tcol:
+            st.markdown("**일별 카테고리 추세**")
+            trend = cv.daily_category_trend(conn, days=int(c_days))
+            if trend.empty:
+                st.info("추세 데이터 없음")
+            else:
+                area = (
+                    alt.Chart(trend)
+                    .mark_area()
+                    .encode(
+                        x=alt.X("day:T", title="날짜"),
+                        y=alt.Y("n:Q", stack="normalize", title="비중"),
+                        color=alt.Color("label:N", legend=alt.Legend(title="카테고리")),
+                        tooltip=["day", "label", "n"],
+                    )
+                    .properties(height=300)
+                )
+                st.altair_chart(area, use_container_width=True)
+
+    st.divider()
+    st.markdown("**카테고리별 종목 · 최근 분류 피드**")
+    fc1, fc2 = st.columns([1, 1])
+    with fc1:
+        cat_opts = [("전체", None)] + [(cv.CATEGORY_LABELS[k], k) for k in cv.CATEGORY_LABELS]
+        c_cat = st.selectbox("카테고리", options=cat_opts, format_func=lambda x: x[0], key="c_cat")
+    with fc2:
+        c_ticker = st.text_input("종목코드", placeholder="005930", key="c_ticker")
+
+    if c_cat[1]:
+        st.markdown(f"**'{c_cat[0]}' 뉴스 상위 종목 (최근 {c_days}일)**")
+        tops = cv.top_tickers_by_category(conn, category=c_cat[1], days=int(c_days))
+        if tops.empty:
+            st.caption("데이터 부족")
+        else:
+            st.dataframe(tops, use_container_width=True, hide_index=True)
+
+    feed = cv.recent_classified_feed(
+        conn,
+        category=c_cat[1],
+        ticker=c_ticker.strip() or None,
         limit=200,
     )
     if feed.empty:

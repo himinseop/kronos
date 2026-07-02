@@ -73,13 +73,16 @@
 - [x] **KR-FinBERT** 적용 (`snunlp/KR-FinBert-SC`) — `analysis/sentiment.py`
 - [x] `sentiments` 테이블 + 감성 점수 배치 워커 (`analysis/run.py`)
 - [x] sentiment 컨테이너 (torch, CPU) — compose `sentiment` 서비스, 백로그 자동 소진 루프
-- [ ] 카테고리 분류 — **자체 LLM** (실적/계약/규제/M&A 등), 종목·이벤트 매칭분에 선택 적용
-- [ ] 모델 라벨링 샘플(100건) 수동 평가
-- [ ] (연기) SQLite → PostgreSQL 마이그레이션 — 동시쓰기 병목 발생 시
+- [x] 카테고리 분류 — **자체 LLM** (Ollama + Qwen2.5-3B, OpenAI 호환 /v1) —
+  `analysis/classify.py` + `classify_run.py`. 종목 매칭 뉴스만 최신순 배치 처리
+  (chunk 15, rationale 생략, ~1.1s/건). sentiments 테이블에 `model='cat:<모델>'`로 적재.
+  Ollama는 mycomai 등과 공유 가능한 호스트 네이티브 서비스(GPU/Metal 가속).
+- [ ] 모델 라벨링 샘플(100건) 수동 평가 — 카테고리·감성 정확도
+- [ ] (연기 해제·완료) SQLite → PostgreSQL 마이그레이션 (손상사고로 조기 완료)
 
 #### 2-B. 대시보드 확장 (Phase 1 대시보드 위에 추가)
 - [x] **감성 탭**: 커버리지·라벨 분포·일별 추세·종목별 상하위·점수 피드
-- [ ] **카테고리 분포**: 실적/계약/규제/M&A 건수 (분류 구현 후)
+- [x] **카테고리 탭**: 커버리지·분포·일별 스택 추세·카테고리별 상위 종목·분류 피드
 - [ ] **모델 비교 뷰**: 룰 이벤트 vs 감성 vs LLM 카테고리 교차 검토
 
 ### Definition of Done

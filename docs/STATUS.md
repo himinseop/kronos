@@ -5,8 +5,9 @@
 ## 현재 단계
 
 - **Phase 1 (수집)**: 완료·운영 중
-- **Phase 2 (감성분석)**: 진행 중 — KR-FinBERT 감성 파이프라인 구현 완료,
-  **PostgreSQL 전환 완료**(코드·데이터·테스트). 다음: 자체 LLM 카테고리 분류.
+- **Phase 2 (감성분석)**: 진행 중 — KR-FinBERT 감성 파이프라인 완료(백로그 100% 소진),
+  **PostgreSQL 전환 완료**, **자체 LLM 카테고리 분류 가동**(Ollama+Qwen2.5-3B, 백로그 소진 중).
+  다음: 라벨링 샘플 수동 평가 + 모델 비교 뷰.
 
 ## ✅ DB: SQLite → PostgreSQL 전환 완료 (2026-07-02)
 
@@ -26,13 +27,23 @@ SQLite 다중 컨테이너 동시쓰기 손상 사고(아래) 대응으로 Postg
 | 프로세스 | 명령 | 로그 |
 |---|---|---|
 | postgres | Docker 컨테이너 (pgdata named volume) | `docker compose logs postgres` |
+| ollama | `brew services` 네이티브 (localhost:11434, Metal 가속) | `brew services info ollama` |
 | collector | `uv run kronos run` (호스트) | `logs/collector.log` |
 | sentiment | `uv run kronos analyze run` (호스트) | `logs/sentiment.log` |
+| classify | `uv run kronos analyze classify-run` (호스트) | `logs/classify.log` |
 | dashboard | `uv run kronos dashboard` (호스트, 127.0.0.1:8501) | `logs/dashboard.log` |
 
 - 접속: `https://office.dropbear-barb.ts.net` (Tailscale serve) 또는 `http://127.0.0.1:8501`
-- 중지: `pkill -f "kronos run"`, `pkill -f "analyze run"`, `pkill -f "streamlit run"`
+- 중지: `pkill -f "kronos run"`, `pkill -f "analyze run"`, `pkill -f "classify-run"`, `pkill -f "streamlit run"`
 - **PG는 동시성 안전** — 호스트 다중 프로세스가 동시에 붙어도 문제 없음
+
+### 자체 LLM (Ollama) — kronos·mycomai 공유 인프라
+
+- **네이티브 설치**(brew, Docker 아님): macOS Docker는 M1 GPU(Metal) 미지원 → CPU only로 5~10배 느림. GPU 가속 위해 네이티브 필수. Linux+NVIDIA로 이전 시 컨테이너화 검토.
+- OpenAI 호환 엔드포인트 `localhost:11434/v1` — kronos는 `llm_base_url` 설정으로 호출.
+  mycomai는 기존 `LLMProvider` 추상화에 provider 추가로 동일 서버 공유 가능(미연동).
+- 모델: `qwen2.5:3b-instruct` (Q4, ~2GB). 16GB RAM 여유 위해 소형 선택. 정확도 부족 시 7B로.
+- 카테고리 분류 백필 규모: 종목 매칭 뉴스 ~112K, ~1.1s/건 → 약 35시간 소진 예정(최신순).
 
 ## 🔴 미해결: Docker VM 레지스트리 네트워크 (컨테이너 재빌드 블로커)
 
@@ -61,10 +72,13 @@ SQLite 다중 컨테이너 동시쓰기 손상 사고(아래) 대응으로 Postg
 
 ## 다음 작업 (Phase 2 잔여)
 
-- [ ] 자체(로컬) LLM 기반 카테고리 분류 (실적/계약/규제/M&A) — 종목·이벤트 매칭분에 선택 적용
-- [ ] 대시보드 카테고리 분포/모델 비교 뷰
-- [ ] Docker 레지스트리 회복 후 컨테이너 재빌드 → 스택 컨테이너화 복귀
-- [ ] sentiment 백로그 소진 완료 확인 (진행 중)
+- [x] 자체(로컬) LLM 기반 카테고리 분류 — Ollama+Qwen2.5-3B, 종목 매칭 뉴스 대상 (가동, 백로그 소진 중)
+- [x] 대시보드 카테고리 탭 (분포·추세·종목별·피드)
+- [ ] 카테고리 백로그 소진 완료 확인 (~35h 예상, 최신순)
+- [ ] 라벨링 샘플 100건 수동 평가 (감성·카테고리 정확도) — 정확도 부족 시 7B 승격
+- [ ] 모델 비교 뷰 (룰 이벤트 vs 감성 vs LLM 카테고리)
+- [ ] Docker 레지스트리 회복 후 컨테이너 재빌드 → 스택 컨테이너화 복귀 (Ollama는 네이티브 유지)
+- [ ] mycomai에 OllamaProvider 연동 (동일 서버 공유, 사용자 확정 후)
 
 ## 원격 접근 (개인 인프라, docs 미기재)
 

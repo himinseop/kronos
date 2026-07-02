@@ -351,5 +351,70 @@ def analyze_run_cmd(
     )
 
 
+def _build_classifier(chunk_size: int):
+    """설정 기반 LLM 분류기 생성."""
+    from kronos.analysis.classify import LlmCategoryClassifier
+
+    settings = get_settings()
+    return LlmCategoryClassifier(
+        settings.llm_base_url,
+        settings.llm_model,
+        api_key=(settings.llm_api_key.get_secret_value() if settings.llm_api_key else None),
+        timeout=settings.llm_timeout_seconds,
+        chunk_size=chunk_size,
+    ), settings.llm_model
+
+
+@analyze_app.command("category")
+def analyze_category_cmd(
+    limit: int = typer.Option(1000, help="이번 실행에서 분류할 최대 건수"),
+    chunk_size: int = typer.Option(15, help="LLM 호출당 묶을 제목 수"),
+    all_pending: bool = typer.Option(False, "--all", help="미분류분 전량 처리 (반복 실행)"),
+) -> None:
+    """종목 매칭된 미분류 뉴스를 자체 LLM으로 카테고리 분류 (Ollama 필요)."""
+    from kronos.analysis.classify_run import classify_news, pending_classify_count
+
+    classifier, model_name = _build_classifier(chunk_size)
+    pending = pending_classify_count(model_name=model_name)
+    console.print(f"미분류 종목뉴스: {pending:,}건 (모델 {model_name})")
+    if pending == 0:
+        return
+
+    total = 0
+    while True:
+        stats = classify_news(classifier, model_name=model_name, limit=limit, chunk_size=chunk_size)
+        total += stats.classified
+        console.print(f"  ... {total:,}건 분류")
+        if not all_pending or stats.scanned == 0:
+            break
+
+    table = Table(title="카테고리 분류 결과")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    table.add_row("Classified", str(total))
+    table.add_row("Remaining", str(pending_classify_count(model_name=model_name)))
+    console.print(table)
+
+
+@analyze_app.command("classify-run")
+def analyze_classify_run_cmd(
+    interval: int = typer.Option(300, help="사이클 간 대기 (초)"),
+    chunk_size: int = typer.Option(15, help="LLM 호출당 묶을 제목 수"),
+    limit_per_cycle: int = typer.Option(1500, help="사이클당 최대 처리 건수"),
+) -> None:
+    """카테고리 분류 루프 (백로그 자동 소진). Ctrl+C로 종료."""
+    from kronos.analysis.classify_run import run_classify_forever
+
+    classifier, model_name = _build_classifier(chunk_size)
+    console.print(f"[green]카테고리 분류 루프 시작[/green] — {interval}s 주기, 모델 {model_name}")
+    run_classify_forever(
+        classifier,
+        model_name=model_name,
+        interval_seconds=interval,
+        chunk_size=chunk_size,
+        limit_per_cycle=limit_per_cycle,
+    )
+
+
 if __name__ == "__main__":
     app()

@@ -5,7 +5,9 @@
 #   docker compose logs -f sentiment   # 감성분석 로그
 #   docker compose down                # 중지
 #
-# DB는 named volume(pgdata) — bind mount 위 SQLite 동시쓰기 손상 이슈를 근본 회피.
+# DB 데이터는 호스트 디스크(./data/pgdata) bind mount — Docker 초기화(reset/purge)에도
+# 데이터 생존. PostgreSQL은 단일 postmaster가 데이터 파일을 독점하므로 과거 SQLite
+# 다중프로세스 bind-mount 손상 모드는 재발하지 않음.
 # 재부팅 자동 복원: Docker Desktop "Start when you sign in" 설정 필요.
 
 x-app-env: &app-env
@@ -23,7 +25,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       TZ: Asia/Seoul
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./data/pgdata:/var/lib/postgresql/data  # 호스트 디스크 영속 (Docker 초기화 생존)
     ports:
       - "127.0.0.1:5432:5432"  # 호스트 도구(마이그레이션·psql)용, localhost 전용
     healthcheck:
@@ -87,4 +89,3 @@ services:
 
 volumes:
   hf_cache:
-  pgdata:

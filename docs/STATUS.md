@@ -1,13 +1,27 @@
 # 프로젝트 상태 (living document)
 
-> 최종 갱신: 2026-07-02. 세션 인수인계용. 매 작업 마무리 시 갱신.
+> 최종 갱신: 2026-07-03. 세션 인수인계용. 매 작업 마무리 시 갱신.
 
 ## 현재 단계
 
 - **Phase 1 (수집)**: 완료·운영 중
-- **Phase 2 (감성분석)**: 진행 중 — KR-FinBERT 감성 파이프라인 완료(백로그 100% 소진),
-  **PostgreSQL 전환 완료**, **자체 LLM 카테고리 분류 가동**(Ollama+Qwen2.5-3B, 백로그 소진 중).
-  다음: 라벨링 샘플 수동 평가 + 모델 비교 뷰.
+- **Phase 2 (감성분석)**: 진행 중 — KR-FinBERT 감성 파이프라인 완료,
+  **PostgreSQL 전환 완료**, **자체 LLM 카테고리 분류 가동**(Ollama+Qwen2.5-3B).
+  2026-07-03 Docker 초기화로 PG 볼륨 소실 → SQLite에서 재복구(아래). 감성·카테고리
+  백로그 재소진 중. 다음: 라벨링 샘플 수동 평가 + 모델 비교 뷰.
+
+## 🔴 2026-07-03 Docker 초기화 → PG 볼륨 소실·복구
+
+- Docker 재시작 과정에서 **컨테이너·이미지·볼륨 전부 초기화**(reset/purge 정황).
+  named volume `pgdata` 소실 → 마이그레이션했던 15만 행 + 07-02 이후 수집·감성·분류분 소실.
+  (부수효과로 Docker 레지스트리 네트워크 이슈는 회복됨)
+- **복구**: `data/kronos.db`(07-02 01:11 복구 스냅샷) → `scripts/migrate_sqlite_to_pg.py`로
+  재적재. 전 테이블 건수 일치 확인(news 126,337 등).
+- **재발 방지**: postgres 데이터를 named volume → **호스트 디스크 bind mount `./data/pgdata`**로
+  변경(compose). 이제 Docker 초기화에도 DB 생존. (PG는 단일 postmaster가 파일 독점 →
+  과거 SQLite 다중프로세스 손상 모드 무관)
+- **손실분**: 07-02 01:11 이후 감성(약 11.8k만 스냅샷에 존재)·카테고리 분류 전량 →
+  워커가 재계산 중(sentiment ~114k, category ~112k 재소진).
 
 ## ✅ DB: SQLite → PostgreSQL 전환 완료 (2026-07-02)
 
@@ -26,7 +40,7 @@ SQLite 다중 컨테이너 동시쓰기 손상 사고(아래) 대응으로 Postg
 
 | 프로세스 | 명령 | 로그 |
 |---|---|---|
-| postgres | Docker 컨테이너 (pgdata named volume) | `docker compose logs postgres` |
+| postgres | Docker 컨테이너 (**호스트 디스크 bind mount `data/pgdata`**) | `docker compose logs postgres` |
 | ollama | `brew services` 네이티브 (localhost:11434, Metal 가속) | `brew services info ollama` |
 | collector | `uv run kronos run` (호스트) | `logs/collector.log` |
 | sentiment | `uv run kronos analyze run` (호스트) | `logs/sentiment.log` |
